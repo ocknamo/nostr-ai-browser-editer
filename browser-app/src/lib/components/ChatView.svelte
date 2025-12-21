@@ -41,29 +41,6 @@
 </script>
 
 <div class="chat-view">
-  <div class="config-bar">
-    <div class="input-row">
-      <div class="input-group">
-        <label for="repo">Repository</label>
-        <input 
-          id="repo"
-          type="text" 
-          bind:value={repo}
-          placeholder="owner/repo"
-        />
-      </div>
-      <div class="input-group">
-        <label for="branch">Branch</label>
-        <input 
-          id="branch"
-          type="text" 
-          bind:value={branch}
-          placeholder="main"
-        />
-      </div>
-    </div>
-  </div>
-  
   <div class="messages" bind:this={messagesContainer}>
     {#if messages.length === 0}
       <div class="empty-state">
@@ -100,44 +77,6 @@
     flex-direction: column;
     height: 100%;
     background: #f9fafb;
-  }
-  
-  .config-bar {
-    padding: 0.75rem 1rem;
-    background: white;
-    border-bottom: 1px solid #e5e7eb;
-  }
-  
-  .input-row {
-    display: flex;
-    gap: 1rem;
-  }
-  
-  .input-group {
-    flex: 1;
-  }
-  
-  .input-group label {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #6b7280;
-    margin-bottom: 0.25rem;
-  }
-  
-  .input-group input {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #d1d5db;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    box-sizing: border-box;
-  }
-  
-  .input-group input:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
   }
   
   .messages {

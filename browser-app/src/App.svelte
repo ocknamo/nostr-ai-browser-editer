@@ -21,6 +21,29 @@
     });
   }
   
+  // Parse GitHub URL to owner/repo format
+  function parseGitHubRepo(input: string): string {
+    // If it's already in owner/repo format, return as-is
+    if (/^[^/]+\/[^/]+$/.test(input.trim())) {
+      return input.trim();
+    }
+    
+    // Try to parse GitHub URL
+    try {
+      const url = new URL(input);
+      if (url.hostname === 'github.com') {
+        const parts = url.pathname.split('/').filter(p => p);
+        if (parts.length >= 2) {
+          return `${parts[0]}/${parts[1]}`;
+        }
+      }
+    } catch {
+      // Not a valid URL, return as-is
+    }
+    
+    return input.trim();
+  }
+  
   type MessageType = 'instruction' | 'question' | 'answer' | 'completion';
   
   interface Message {
@@ -87,8 +110,11 @@
     const requestId = generateUUID();
     currentRequestId = requestId;
     
+    // Normalize repo format
+    const normalizedRepo = parseGitHubRepo(repo);
+    
     try {
-      await nostrClient.sendInstruction(repo, branch, inst, requestId);
+      await nostrClient.sendInstruction(normalizedRepo, branch, inst, requestId);
       
       const newMessage: Message = {
         id: requestId,
@@ -115,8 +141,11 @@
   async function handleAnswer(questionEventId: string, answer: string) {
     if (!currentRequestId) return;
     
+    // Normalize repo format
+    const normalizedRepo = parseGitHubRepo(repo);
+    
     try {
-      await nostrClient.sendAnswer(repo, branch, currentRequestId, questionEventId, answer);
+      await nostrClient.sendAnswer(normalizedRepo, branch, currentRequestId, questionEventId, answer);
       
       const newMessage: Message = {
         id: generateUUID(),
@@ -139,6 +168,8 @@
   <Header 
     {npub} 
     {activeView}
+    bind:repo
+    bind:branch
     onViewChange={handleViewChange}
   />
   

@@ -10,6 +10,29 @@
   let error = $state('');
   let loaded = $state(false);
   
+  // Parse GitHub URL to owner/repo format
+  function parseGitHubRepo(input: string): string {
+    // If it's already in owner/repo format, return as-is
+    if (/^[^/]+\/[^/]+$/.test(input.trim())) {
+      return input.trim();
+    }
+    
+    // Try to parse GitHub URL
+    try {
+      const url = new URL(input);
+      if (url.hostname === 'github.com') {
+        const parts = url.pathname.split('/').filter(p => p);
+        if (parts.length >= 2) {
+          return `${parts[0]}/${parts[1]}`;
+        }
+      }
+    } catch {
+      // Not a valid URL, return as-is
+    }
+    
+    return input.trim();
+  }
+  
   async function handleLoad() {
     if (!repo.trim()) {
       error = 'Please enter a repository';
@@ -20,22 +43,27 @@
     error = '';
     
     try {
-      // Clear existing preview
+      // Clear existing preview and get container height
       const container = document.getElementById('preview-container');
       if (container) {
         container.innerHTML = '';
       }
       
+      // Normalize repo format
+      const normalizedRepo = parseGitHubRepo(repo);
+      
+      // Get container height for full-height iframe
+      const containerHeight = container?.parentElement?.clientHeight || 600;
+      
       await sdk.embedGithubProject(
         'preview-container',
-        repo,
+        normalizedRepo,
         {
           forceEmbedLayout: true,
           view: 'preview',
-          height: '100%',
+          height: containerHeight,
           openFile: 'src/App.svelte',
-          theme: 'light',
-          ...(branch && { startScript: `git checkout ${branch}` })
+          theme: 'light'
         }
       );
       loaded = true;
@@ -46,49 +74,19 @@
       loading = false;
     }
   }
-  
-  async function handleReload() {
-    await handleLoad();
-  }
 </script>
 
 <div class="preview-view">
   <div class="controls">
-    <div class="input-row">
-      <div class="input-group">
-        <label for="preview-repo">Repository</label>
-        <input 
-          id="preview-repo"
-          type="text"
-          bind:value={repo}
-          placeholder="owner/repo"
-        />
-      </div>
-      
-      <div class="input-group branch">
-        <label for="preview-branch">Branch</label>
-        <input 
-          id="preview-branch"
-          type="text"
-          bind:value={branch}
-          placeholder="main"
-        />
-      </div>
-    </div>
-    
-    <div class="button-group">
-      <button onclick={handleLoad} disabled={loading || !repo.trim()}>
-        {#if loading}
-          Loading...
-        {:else}
-          Load Preview
-        {/if}
-      </button>
-      <button onclick={handleReload} disabled={loading || !loaded}>
-        Reload
-      </button>
-    </div>
-    
+    <button class="load-button" onclick={handleLoad} disabled={loading || !repo.trim()}>
+      {#if loading}
+        ⏳ Loading...
+      {:else if loaded}
+        Reload Preview
+      {:else}
+        ▶ Load Preview
+      {/if}
+    </button>
     {#if error}
       <p class="error">{error}</p>
     {/if}
@@ -100,8 +98,13 @@
         <p>Enter a GitHub repository and click "Load Preview"</p>
         <p class="help">Example: facebook/react</p>
       </div>
+    {:else if loading && !loaded}
+      <div class="placeholder">
+        <p>⏳ Loading StackBlitz preview...</p>
+        <p class="help">This may take a moment</p>
+      </div>
     {/if}
-    <div id="preview-container" class:hidden={!loaded && !loading}></div>
+    <div id="preview-container" style:display={loaded || loading ? 'block' : 'none'}></div>
   </div>
 </div>
 
@@ -114,71 +117,29 @@
   }
   
   .controls {
-    padding: 1rem;
+    padding: 0.5rem;
     border-bottom: 1px solid #e5e7eb;
     background: #f9fafb;
   }
   
-  .input-row {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 0.75rem;
-  }
-  
-  .input-group {
-    flex: 1;
-  }
-  
-  .input-group.branch {
-    flex: 0.5;
-  }
-  
-  .input-group label {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #6b7280;
-    margin-bottom: 0.25rem;
-  }
-  
-  .input-group input {
+  .load-button {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid #d1d5db;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    box-sizing: border-box;
-  }
-  
-  .input-group input:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-  }
-  
-  .button-group {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-  }
-  
-  button {
-    padding: 0.75rem;
     background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 0.5rem;
+    border-radius: 0.375rem;
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
     transition: background 0.2s;
   }
   
-  button:hover:not(:disabled) {
+  .load-button:hover:not(:disabled) {
     background: #2563eb;
   }
   
-  button:disabled {
+  .load-button:disabled {
     background: #9ca3af;
     cursor: not-allowed;
   }
@@ -196,6 +157,8 @@
     flex: 1;
     overflow: hidden;
     position: relative;
+    display: flex;
+    flex-direction: column;
   }
   
   .placeholder {
@@ -220,10 +183,12 @@
   
   #preview-container {
     width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
   }
   
-  .hidden {
-    display: none;
+  #preview-container :global(iframe) {
+    width: 100% !important;
+    height: 100% !important;
   }
 </style>
