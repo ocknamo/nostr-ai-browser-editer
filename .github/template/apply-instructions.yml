@@ -1,0 +1,181 @@
+name: Apply AI Instructions via Nostr
+
+on:
+  schedule:
+    - cron: '*/2 * * * *'  # Every 2 minutes polling
+  workflow_dispatch:
+  repository_dispatch:
+    types: [nostr_instruction]
+
+jobs:
+  apply-ai-instructions:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Aider
+        run: |
+          pip install aider-chat
+      
+      - name: Install nostcat
+        run: |
+          curl -L https://github.com/blakejakopovic/nostcat/releases/download/v0.1.0/nostcat-linux-amd64 -o /usr/local/bin/nostcat
+          chmod +x /usr/local/bin/nostcat
+      
+      - name: Fetch Nostr Events
+        id: fetch
+        run: |
+          CACHE_FILE=.github/cache/last_processed.txt
+          mkdir -p .github/cache
+          LAST_TIME=$(cat $CACHE_FILE 2>/dev/null || echo 0)
+          
+          echo "Fetching events since: $LAST_TIME"
+          
+          # Fetch kind:30101 events for this repository
+          EVENTS=$(nostcat --relay wss://yabu.me \
+            --kinds 30101 \
+            --since $LAST_TIME \
+            --limit 10 2>/dev/null || echo "[]")
+          
+          echo "Raw events: $EVENTS"
+          
+          # Filter events with matching repo tag
+          REPO_EVENTS=$(echo "$EVENTS" | jq -c --arg repo "${{ github.repository }}" \
+            '[.[] | select(.tags[][] == $repo)]')
+          
+          echo "events=$REPO_EVENTS" >> $GITHUB_OUTPUT
+          
+          # Check if there are events
+          EVENT_COUNT=$(echo "$REPO_EVENTS" | jq 'length')
+          if [ "$EVENT_COUNT" -eq 0 ]; then
+            echo "no_events=true" >> $GITHUB_OUTPUT
+            echo "No new events found"
+          else
+            echo "no_events=false" >> $GITHUB_OUTPUT
+            echo "Found $EVENT_COUNT events"
+          fi
+      
+      - name: Verify npub
+        if: steps.fetch.outputs.no_events == 'false'
+        run: |
+          AUTHORIZED_NPUB=$(cat .github/authorized_npub 2>/dev/null || echo "")
+          
+          if [ -z "$AUTHORIZED_NPUB" ]; then
+            echo "Warning: No authorized_npub file found. Skipping verification."
+            exit 0
+          fi
+          
+          EVENT_PUBKEY=$(echo '${{ steps.fetch.outputs.events }}' | jq -r '.[0].pubkey')
+          
+          # Convert hex pubkey to npub (simple check - first 8 chars match)
+          echo "Event pubkey: $EVENT_PUBKEY"
+          echo "Authorized npub: $AUTHORIZED_NPUB"
+          
+          # For MVP, just log the pubkey for manual verification
+          echo "Pubkey verification would happen here"
+      
+      - name: Apply AI Instructions
+        if: steps.fetch.outputs.no_events == 'false'
+        id: aider
+        run: |
+          EVENT=$(echo '${{ steps.fetch.outputs.events }}' | jq -r '.[0]')
+          INSTRUCTION=$(echo "$EVENT" | jq -r '.content')
+          BRANCH=$(echo "$EVENT" | jq -r '.tags[] | select(.[0]=="branch") | .[1] // "ai-changes"')
+          REQUEST_ID=$(echo "$EVENT" | jq -r '.tags[] | select(.[0]=="request_id") | .[1]')
+          
+          echo "Instruction: $INSTRUCTION"
+          echo "Branch: $BRANCH"
+          echo "Request ID: $REQUEST_ID"
+          
+          # Configure git
+          git config user.name "AI Bot"
+          git config user.email "ai@bot.local"
+          
+          # Create or checkout branch
+          git checkout -B "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
+          
+          # Run Aider
+          aider --yes --message "$INSTRUCTION" || {
+            echo "Aider execution failed"
+            exit 1
+          }
+          
+          echo "request_id=$REQUEST_ID" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      
+      - name: Commit & Push
+        if: steps.fetch.outputs.no_events == 'false'
+        run: |
+          EVENT=$(echo '${{ steps.fetch.outputs.events }}' | jq -r '.[0]')
+          INSTRUCTION=$(echo "$EVENT" | jq -r '.content' | head -c 50)
+          BRANCH=${{ steps.aider.outputs.branch }}
+          
+          git add .
+          git commit -m "AI: $INSTRUCTION..." || echo "No changes to commit"
+          git push origin "$BRANCH" --force
+      
+      - name: Create or Update PR
+        if: steps.fetch.outputs.no_events == 'false'
+        id: pr
+        run: |
+          EVENT=$(echo '${{ steps.fetch.outputs.events }}' | jq -r '.[0]')
+          INSTRUCTION=$(echo "$EVENT" | jq -r '.content')
+          BRANCH=${{ steps.aider.outputs.branch }}
+          
+          # Create PR or update existing
+          PR_URL=$(gh pr create \
+            --title "AI: $INSTRUCTION" \
+            --body "Applied AI instruction via Nostr" \
+            --base main \
+            --head "$BRANCH" 2>/dev/null || \
+            gh pr view "$BRANCH" --json url -q .url)
+          
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "PR URL: $PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Send Completion Event
+        if: steps.fetch.outputs.no_events == 'false'
+        run: |
+          EVENT=$(echo '${{ steps.fetch.outputs.events }}' | jq -r '.[0]')
+          REQUEST_ID=${{ steps.aider.outputs.request_id }}
+          USER_PUBKEY=$(echo "$EVENT" | jq -r '.pubkey')
+          BRANCH=${{ steps.aider.outputs.branch }}
+          COMMIT=$(git rev-parse HEAD)
+          PR_URL="${{ steps.pr.outputs.pr_url }}"
+          
+          echo "Completion notification would be sent here"
+          echo "Request ID: $REQUEST_ID"
+          echo "User Pubkey: $USER_PUBKEY"
+          echo "Branch: $BRANCH"
+          echo "Commit: $COMMIT"
+          echo "PR URL: $PR_URL"
+          
+          # TODO: Send kind:30104 completion event via Nostr
+          # This requires an nsec for the bot, which should be stored in secrets
+      
+      - name: Update Last Processed Time
+        if: steps.fetch.outputs.no_events == 'false'
+        run: |
+          mkdir -p .github/cache
+          date +%s > .github/cache/last_processed.txt
+          git add .github/cache
+          git commit -m "Update last processed timestamp" || true
+          git push origin ${{ steps.aider.outputs.branch }} || true
