@@ -82,10 +82,10 @@
       bind:value={instruction}
       placeholder="Enter AI instructions...&#10;&#10;Example: Change the button color to blue"
       rows="3"
-      on:keydown={handleKeydown}
-    />
+      onkeydown={handleKeydown}
+    ></textarea>
     <button 
-      on:click={handleSend}
+      onclick={handleSend}
       disabled={!instruction.trim() || !repo.trim()}
     >
       Send via Nostr

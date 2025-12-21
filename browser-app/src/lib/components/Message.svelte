@@ -39,9 +39,9 @@
         type="text" 
         bind:value={answerText}
         placeholder="Type your answer..."
-        on:keydown={handleKeydown}
+        onkeydown={handleKeydown}
       />
-      <button on:click={handleAnswer} disabled={!answerText.trim()}>
+      <button onclick={handleAnswer} disabled={!answerText.trim()}>
         Send
       </button>
     </div>

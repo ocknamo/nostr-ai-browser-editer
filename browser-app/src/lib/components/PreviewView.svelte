@@ -77,14 +77,14 @@
     </div>
     
     <div class="button-group">
-      <button on:click={handleLoad} disabled={loading || !repo.trim()}>
+      <button onclick={handleLoad} disabled={loading || !repo.trim()}>
         {#if loading}
           Loading...
         {:else}
           Load Preview
         {/if}
       </button>
-      <button on:click={handleReload} disabled={loading || !loaded}>
+      <button onclick={handleReload} disabled={loading || !loaded}>
         Reload
       </button>
     </div>

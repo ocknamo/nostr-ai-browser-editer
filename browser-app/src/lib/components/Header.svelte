@@ -16,7 +16,7 @@
 
 <header>
   <div class="header-content">
-    <button class="menu-btn" on:click={() => menuOpen = !menuOpen}>
+    <button class="menu-btn" onclick={() => menuOpen = !menuOpen}>
       {#if menuOpen}
         &#x2715;
       {:else}
@@ -29,14 +29,14 @@
     <div class="view-toggle">
       <button 
         class:active={activeView === 'chat'}
-        on:click={() => onViewChange('chat')}
+        onclick={() => onViewChange('chat')}
         aria-label="Chat view"
       >
         Chat
       </button>
       <button 
         class:active={activeView === 'preview'}
-        on:click={() => onViewChange('preview')}
+        onclick={() => onViewChange('preview')}
         aria-label="Preview view"
       >
         Preview
@@ -47,10 +47,10 @@
   {#if menuOpen}
     <div class="menu">
       <div class="menu-item">
-        <label>Your npub:</label>
+        <p class="label-text">Your npub:</p>
         <div class="npub-display">
           <code>{shortNpub}</code>
-          <button on:click={copyNpub} title="Copy full npub">
+          <button onclick={copyNpub} title="Copy full npub">
             Copy
           </button>
         </div>
@@ -128,11 +128,12 @@
     margin-bottom: 1rem;
   }
   
-  .menu-item label {
+  .menu-item .label-text {
     display: block;
     font-size: 0.875rem;
     margin-bottom: 0.5rem;
     opacity: 0.9;
+    margin-top: 0;
   }
   
   .npub-display {
