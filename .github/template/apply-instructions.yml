@@ -2,7 +2,7 @@ name: Apply AI Instructions via Nostr
 
 on:
   schedule:
-    - cron: '*/2 * * * *'  # Every 2 minutes polling
+    - cron: '*/5 * * * *'  # Every 2 minutes polling
   workflow_dispatch:
   repository_dispatch:
     types: [nostr_instruction]
@@ -72,10 +72,10 @@ jobs:
       - name: Verify npub
         if: steps.fetch.outputs.no_events == 'false'
         run: |
-          AUTHORIZED_NPUB=$(cat .github/authorized_npub 2>/dev/null || echo "")
+          AUTHORIZED_NPUB="${{ vars.AUTHORIZED_NPUB }}"
           
           if [ -z "$AUTHORIZED_NPUB" ]; then
-            echo "Warning: No authorized_npub file found. Skipping verification."
+            echo "Warning: AUTHORIZED_NPUB variable not set. Skipping verification."
             exit 0
           fi
           

@@ -50,9 +50,10 @@ cp path/to/nostr-ai-browser-editer/.github/template/apply-instructions.yml .gith
 
 Register your npub:
 
-```bash
-echo "npub1your_npub_here" > .github/authorized_npub
-```
+1. Go to your repository on GitHub
+2. Navigate to Settings -> Secrets and variables -> Actions -> Variables
+3. Create a new variable named `AUTHORIZED_NPUB`
+4. Set the value to your npub (e.g., `npub1abc123xyz...`)
 
 ### 4. Configure GitHub Secrets
 
