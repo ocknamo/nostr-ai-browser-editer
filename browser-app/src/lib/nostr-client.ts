@@ -19,7 +19,7 @@ declare global {
   }
 }
 
-const RELAY_URL = 'wss://r.kojira.io/';
+const RELAY_URL = 'wss://relay.damus.io/';
 
 type MessageCallback = (event: NostrEvent) => void;
 

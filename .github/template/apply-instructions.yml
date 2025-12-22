@@ -47,7 +47,7 @@ jobs:
           
           # Fetch kind:30101 events for this repository
           EVENTS=$(echo '["REQ", "FETCH", {"kinds": [30101], "since": '$LAST_TIME', "limit": 10}]' | \
-            nostcat wss://r.kojira.io/ 2>/dev/null || echo "[]")
+            nostcat wss://relay.damus.io/ 2>/dev/null || echo "[]")
           
           echo "Raw events: $EVENTS"
           
