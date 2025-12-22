@@ -46,10 +46,8 @@ jobs:
           echo "Fetching events since: $LAST_TIME"
           
           # Fetch kind:30101 events for this repository
-          EVENTS=$(nostcat --relay wss://yabu.me \
-            --kinds 30101 \
-            --since $LAST_TIME \
-            --limit 10 2>/dev/null || echo "[]")
+          EVENTS=$(echo '["REQ", "FETCH", {"kinds": [30101], "since": '$LAST_TIME', "limit": 10}]' | \
+            nostcat wss://yabu.me 2>/dev/null || echo "[]")
           
           echo "Raw events: $EVENTS"
           
