@@ -90,7 +90,7 @@ In your target repository, go to Settings -> Secrets and variables -> Actions:
 
 ### Relay
 
-Development uses `wss://yabu.me` as the default relay.
+Development uses `wss://r.kojira.io/` as the default relay.
 
 ## License
 
