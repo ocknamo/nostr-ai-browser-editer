@@ -1,14 +1,26 @@
 # NABE - Nostr AI Browser Editor
 
-A browser-based AI development tool that sends instructions via Nostr and automatically applies changes through GitHub Actions.
+> **Note: This project is under active development. Some features described in the roadmap are not yet implemented.**
+
+A browser-based tool for previewing GitHub repositories via StackBlitz.
+
+## Current Status
+
+NABE is transitioning from a Nostr/AI coding workflow to a **StackBlitz preview-focused tool**. The table below shows the current implementation status:
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | Remove Nostr/Chat features | ✅ Complete |
+| Phase 2 | CD / Public deployment (Cloudflare Pages) | 🚧 Not yet |
+| Phase 3 | Fix branch bug in StackBlitz preview | 🚧 Not yet |
+| Phase 4 | Configurable open file setting | 🚧 Not yet |
+| Phase 5 | UX improvements | 🚧 Not yet |
+
+See [ROADMAP.md](./ROADMAP.md) for details.
 
 ## Overview
 
-NABE enables iterative frontend development by:
-1. Sending AI instructions from a browser app via Nostr
-2. GitHub Actions polls for new instructions
-3. Aider (AI CLI tool) applies the changes
-4. PRs are automatically created
+NABE embeds a StackBlitz preview of any GitHub repository directly in the browser. You can specify a repository and branch, then view and interact with the live preview.
 
 ## Project Structure
 
@@ -16,14 +28,12 @@ NABE enables iterative frontend development by:
 nostr-ai-browser-editer/
   browser-app/         # Svelte frontend app
   .github/
-    template/          # GitHub Actions templates for target repos
+    template/          # GitHub Actions templates (legacy)
   docs/
     design.md          # Full system design document
 ```
 
 ## Quick Start
-
-### 1. Run the Browser App
 
 ```bash
 cd browser-app
@@ -33,64 +43,30 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
-### 2. Get Your npub
+### Usage
 
 1. Click the menu icon in the header
-2. Copy your npub (e.g., `npub1abc...xyz`)
+2. Enter a GitHub repository (e.g., `owner/repo` or a GitHub URL)
+3. Enter a branch name (e.g., `main`)
+4. The StackBlitz preview will load
 
-### 3. Setup Your Target Repository
-
-Copy the GitHub Actions workflow to your target repository:
-
-```bash
-# In your target repository
-mkdir -p .github/workflows
-cp path/to/nostr-ai-browser-editer/.github/template/apply-instructions.yml .github/workflows/
-```
-
-Register your npub:
-
-1. Go to your repository on GitHub
-2. Navigate to Settings -> Secrets and variables -> Actions -> Variables
-3. Create a new variable named `AUTHORIZED_NPUB`
-4. Set the value to your npub (e.g., `npub1abc123xyz...`)
-
-### 4. Configure GitHub Secrets
-
-In your target repository, go to Settings -> Secrets and variables -> Actions:
-
-- `ANTHROPIC_API_KEY`: Your Claude API key for Aider
-
-### 5. Start Developing
-
-1. Enter your repository name (e.g., `owner/repo`) in the browser app
-2. Enter your branch name (e.g., `main` or `feature/new-feature`)
-3. Type your AI instruction
-4. Click "Send via Nostr"
-5. GitHub Actions will poll and apply the changes (within 2 minutes)
-
-## Nostr Event Types
-
-| Kind | Description | Direction |
-|------|-------------|-----------|
-| 30101 | AI instruction | Browser -> Actions |
-| 30102 | AI question | Actions -> Browser |
-| 30103 | Question answer | Browser -> Actions |
-| 30104 | Completion notification | Actions -> Browser |
+> **Known issue (Phase 3):** Branch specification is not yet working correctly. The preview always loads the default branch regardless of the branch input.
 
 ## Development
 
-### Browser App Tech Stack
+### Tech Stack
 
-- Svelte + TypeScript
+- Svelte 5 + TypeScript
 - Vite
-- rx-nostr (Nostr client)
-- nostr-tools (Nostr utilities)
 - StackBlitz SDK (preview embedding)
 
-### Relay
+### Commands
 
-Development uses `wss://relay.damus.io/` as the default relay.
+```bash
+npm run dev      # Start dev server
+npm run build    # Production build
+npm run check    # Type check (svelte-check + tsc)
+```
 
 ## License
 
