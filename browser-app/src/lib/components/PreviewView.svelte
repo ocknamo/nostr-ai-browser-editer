@@ -65,7 +65,12 @@
           view: 'preview',
           height: containerHeight,
           openFile: 'src/App.svelte',
-          theme: 'light'
+          theme: 'light',
+          // Required when the parent page is cross-origin isolated (COOP + COEP headers).
+          // This adds allow="cross-origin-isolated" to the embedded iframe element.
+          // Without this, the StackBlitz VM connection times out in isolated contexts.
+          // See: https://blog.stackblitz.com/posts/cross-browser-with-coop-coep/
+          crossOriginIsolated: true
         }
       );
       loaded = true;
