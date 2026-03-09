@@ -2,9 +2,11 @@
   let {
     repo = $bindable(''),
     branch = $bindable(''),
+    openFile = $bindable(''),
   }: {
     repo?: string;
     branch?: string;
+    openFile?: string;
   } = $props();
 
   let menuOpen = $state(false);
@@ -71,6 +73,15 @@
               placeholder="main"
             />
           </div>
+        </div>
+        <div class="form-group">
+          <label for="menu-open-file">Open File (optional)</label>
+          <input
+            id="menu-open-file"
+            type="text"
+            bind:value={openFile}
+            placeholder="src/App.svelte"
+          />
         </div>
       </div>
     </div>
