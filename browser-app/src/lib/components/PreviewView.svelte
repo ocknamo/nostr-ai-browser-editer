@@ -8,6 +8,7 @@
   
   let loading = $state(false);
   let error = $state('');
+  let errorDetail = $state('');
   let loaded = $state(false);
   
   // Parse GitHub URL to owner/repo format
@@ -41,6 +42,7 @@
     
     loading = true;
     error = '';
+    errorDetail = '';
     
     try {
       // Clear existing preview and get container height
@@ -63,12 +65,27 @@
           view: 'preview',
           height: containerHeight,
           openFile: 'src/App.svelte',
-          theme: 'light'
+          theme: 'light',
+          // Required when the parent page is cross-origin isolated (COOP + COEP headers).
+          // This adds allow="cross-origin-isolated" to the embedded iframe element.
+          // Without this, the StackBlitz VM connection times out in isolated contexts.
+          // See: https://blog.stackblitz.com/posts/cross-browser-with-coop-coep/
+          crossOriginIsolated: true
         }
       );
       loaded = true;
     } catch (err) {
-      error = `Failed to load preview: ${err instanceof Error ? err.message : 'Unknown error'}`;
+      if (err instanceof Error) {
+        error = `Failed to load preview: ${err.message}`;
+        errorDetail = err.stack ?? '';
+      } else {
+        error = 'Failed to load preview: Unknown error';
+        try {
+          errorDetail = JSON.stringify(err, null, 2);
+        } catch {
+          errorDetail = String(err);
+        }
+      }
       console.error('StackBlitz error:', err);
     } finally {
       loading = false;
@@ -89,6 +106,9 @@
     </button>
     {#if error}
       <p class="error">{error}</p>
+      {#if errorDetail}
+        <pre class="error-detail">{errorDetail}</pre>
+      {/if}
     {/if}
   </div>
   
@@ -151,6 +171,19 @@
     color: #991b1b;
     border-radius: 0.375rem;
     font-size: 0.875rem;
+  }
+
+  .error-detail {
+    margin-top: 0.25rem;
+    padding: 0.5rem;
+    background: #fff1f2;
+    color: #7f1d1d;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 10rem;
+    overflow-y: auto;
   }
   
   .preview-container {
