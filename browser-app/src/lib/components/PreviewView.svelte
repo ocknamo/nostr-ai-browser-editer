@@ -1,10 +1,11 @@
 <script lang="ts">
   import sdk from '@stackblitz/sdk';
   
-  let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable('') }: {
+  let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
     repo?: string;
     branch?: string;
     openFile?: string;
+    projectRoot?: string;
   } = $props();
   
   let loading = $state(false);
@@ -62,9 +63,12 @@
         container.innerHTML = '';
       }
       
-      // Normalize repo format and build path with optional branch
+      // Normalize repo format and build path with optional branch and project root.
+      // StackBlitz supports subdirectory embedding via owner/repo/tree/branch/subdir format.
       const normalizedRepo = parseGitHubRepo(repo);
-      const repoPath = branch ? `${normalizedRepo}/tree/${branch}` : normalizedRepo;
+      const branchSegment = branch ? `/tree/${branch}` : '';
+      const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
+      const repoPath = `${normalizedRepo}${branchSegment}${rootSegment}`;
 
       // Get container height for full-height iframe
       const containerHeight = container?.parentElement?.clientHeight || 600;
