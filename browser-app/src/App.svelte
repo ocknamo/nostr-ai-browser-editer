@@ -4,13 +4,15 @@
 
   let repo = $state('');
   let branch = $state('main');
+  let openFile = $state('');
+  let projectRoot = $state('');
 </script>
 
 <div class="app">
-  <Header bind:repo bind:branch />
+  <Header bind:repo bind:branch bind:openFile bind:projectRoot />
 
   <main>
-    <PreviewView bind:repo bind:branch />
+    <PreviewView bind:repo bind:branch bind:openFile bind:projectRoot />
   </main>
 </div>
 

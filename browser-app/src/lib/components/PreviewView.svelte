@@ -1,15 +1,27 @@
 <script lang="ts">
   import sdk from '@stackblitz/sdk';
   
-  let { repo = $bindable(''), branch = $bindable('') }: {
+  let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
     repo?: string;
     branch?: string;
+    openFile?: string;
+    projectRoot?: string;
   } = $props();
   
   let loading = $state(false);
   let error = $state('');
   let errorDetail = $state('');
   let loaded = $state(false);
+
+  // Reset loaded state when repo or branch changes so the stale preview is cleared
+  $effect(() => {
+    // Referencing repo and branch registers them as reactive dependencies
+    if (repo !== undefined && branch !== undefined) {
+      loaded = false;
+      error = '';
+      errorDetail = '';
+    }
+  });
   
   // Parse GitHub URL to owner/repo format
   function parseGitHubRepo(input: string): string {
@@ -51,20 +63,24 @@
         container.innerHTML = '';
       }
       
-      // Normalize repo format
+      // Normalize repo format and build path with optional branch and project root.
+      // StackBlitz supports subdirectory embedding via owner/repo/tree/branch/subdir format.
       const normalizedRepo = parseGitHubRepo(repo);
-      
+      const branchSegment = branch ? `/tree/${branch}` : '';
+      const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
+      const repoPath = `${normalizedRepo}${branchSegment}${rootSegment}`;
+
       // Get container height for full-height iframe
       const containerHeight = container?.parentElement?.clientHeight || 600;
-      
+
       await sdk.embedGithubProject(
         'preview-container',
-        normalizedRepo,
+        repoPath,
         {
           forceEmbedLayout: true,
           view: 'preview',
           height: containerHeight,
-          openFile: 'src/App.svelte',
+          ...(openFile.trim() ? { openFile: openFile.trim() } : {}),
           theme: 'light',
           // Required when the parent page is cross-origin isolated (COOP + COEP headers).
           // This adds allow="cross-origin-isolated" to the embedded iframe element.

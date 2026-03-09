@@ -2,9 +2,13 @@
   let {
     repo = $bindable(''),
     branch = $bindable(''),
+    openFile = $bindable(''),
+    projectRoot = $bindable(''),
   }: {
     repo?: string;
     branch?: string;
+    openFile?: string;
+    projectRoot?: string;
   } = $props();
 
   let menuOpen = $state(false);
@@ -71,6 +75,24 @@
               placeholder="main"
             />
           </div>
+        </div>
+        <div class="form-group">
+          <label for="menu-project-root">Project Root (optional)</label>
+          <input
+            id="menu-project-root"
+            type="text"
+            bind:value={projectRoot}
+            placeholder="yakitofu-app"
+          />
+        </div>
+        <div class="form-group">
+          <label for="menu-open-file">Open File (optional)</label>
+          <input
+            id="menu-open-file"
+            type="text"
+            bind:value={openFile}
+            placeholder="src/App.svelte"
+          />
         </div>
       </div>
     </div>
