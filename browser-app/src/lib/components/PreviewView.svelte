@@ -66,7 +66,9 @@
       // Normalize repo format and build path with optional branch and project root.
       // StackBlitz supports subdirectory embedding via owner/repo/tree/branch/subdir format.
       const normalizedRepo = parseGitHubRepo(repo);
-      const branchSegment = branch ? `/tree/${branch}` : '';
+      // Encode the branch name so slashes (e.g. "claude/fix-foo") become %2F,
+      // preventing StackBlitz from misinterpreting path segments as branch vs subdirectory.
+      const branchSegment = branch ? `/tree/${encodeURIComponent(branch)}` : '';
       const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
       const repoPath = `${normalizedRepo}${branchSegment}${rootSegment}`;
 
