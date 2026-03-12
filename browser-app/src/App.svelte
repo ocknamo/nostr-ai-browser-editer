@@ -1,11 +1,18 @@
 <script lang="ts">
   import Header from './lib/components/Header.svelte';
   import PreviewView from './lib/components/PreviewView.svelte';
+  import { loadCurrentSettings, saveCurrentSettings } from './lib/settings-store';
 
-  let repo = $state('');
-  let branch = $state('main');
-  let openFile = $state('');
-  let projectRoot = $state('');
+  const initial = loadCurrentSettings();
+  let repo = $state(initial.repo);
+  let branch = $state(initial.branch || 'main');
+  let openFile = $state(initial.openFile);
+  let projectRoot = $state(initial.projectRoot);
+
+  /** Auto-save settings whenever any value changes. */
+  $effect(() => {
+    saveCurrentSettings({ repo, branch, openFile, projectRoot });
+  });
 </script>
 
 <div class="app">
