@@ -8,33 +8,24 @@
 
 ### 要件1: リポジトリ＋ブランチでプレビュー表示
 
-**半実装（バグあり）**
+**実装済み**
 
-`PreviewView.svelte` の `embedGithubProject` 呼び出しに `branch` が渡されていない。
-StackBlitz SDK はブランチ指定を `owner/repo/tree/branch` 形式で受け取るが、現在は `owner/repo` のみ渡している。
-
-```ts
-// 現状（バグ）
-const normalizedRepo = parseGitHubRepo(repo); // → "owner/repo" のみ
-await sdk.embedGithubProject('preview-container', normalizedRepo, { ... });
-
-// 修正後
-const repoPath = branch ? `${normalizedRepo}/tree/${branch}` : normalizedRepo;
-await sdk.embedGithubProject('preview-container', repoPath, { ... });
-```
+`PreviewView.svelte` の `embedGithubProject` 呼び出しでブランチを `owner/repo/tree/branch` 形式で渡している。
+特殊文字はURLエンコードされる。
 
 ### 要件2: アプリケーションルートの指定
 
-**未実装**
+**実装済み**
 
-`openFile` が `'src/App.svelte'` にハードコードされており、リポジトリごとに変更できない。
+`openFile` と `projectRoot` を `App.svelte` のステートとして管理し、`Header.svelte` の入力欄で変更可能。
+`PreviewView.svelte` で StackBlitz SDK の `openFile` オプションに渡している。
 
 ### 要件3: ブランチ最新状態への更新
 
-**半実装**
+**動作中**
 
-「Reload Preview」ボタンは存在するが、要件1のバグ（branch未渡し）により最新取得が機能しない。
-バグ修正後は `handleLoad()` 再呼び出しで動く想定。
+「Reload Preview」ボタンで現在のリポジトリ/ブランチ設定を使って再ロードできる。
+リポジトリ/ブランチが変更された場合はロード済み状態が自動リセットされる。
 
 ---
 
@@ -108,27 +99,39 @@ jobs:
 | PR プレビュー | Cloudflare Pages は PR ごとに自動でプレビューURLを発行（追加設定不要） |
 | 本番デプロイ | `main` ブランチへのマージで自動デプロイ |
 
-### Phase 3: ブランチ対応の修正（バグ修正）
+### Phase 3: ブランチ対応の修正（バグ修正）✅ 完了
 
 | 対象 | 作業内容 |
 |------|---------|
-| `PreviewView.svelte` | `embedGithubProject` に渡す文字列を `owner/repo/tree/branch` 形式に修正 |
+| `PreviewView.svelte` | `embedGithubProject` に渡す文字列を `owner/repo/tree/branch` 形式に修正。特殊文字は `encodeURIComponent` でエスケープ |
 | `Header.svelte` | ブランチ入力欄は残す |
 
-### Phase 4: アプリケーションルート設定の追加
+### Phase 4: アプリケーションルート設定の追加 ✅ 完了
 
 | 対象 | 作業内容 |
 |------|---------|
-| `App.svelte` | `openFile` state を追加、PreviewView に渡す |
-| `Header.svelte` | メニューに「Open File」入力欄を追加（例: `src/main.ts`、空欄で省略） |
-| `PreviewView.svelte` | `openFile` を props で受け取り SDK に渡す。空欄の場合は省略 |
+| `App.svelte` | `openFile`・`projectRoot` state を追加、PreviewView に渡す |
+| `Header.svelte` | メニューに「Open File」「Project Root」入力欄を追加 |
+| `PreviewView.svelte` | `openFile`・`projectRoot` を props で受け取り SDK に渡す。空欄の場合は省略 |
 
-### Phase 5: UX改善
+### Phase 5: UX改善 ✅ 完了
 
 | 対象 | 作業内容 |
 |------|---------|
 | `PreviewView.svelte` | リポジトリ/ブランチ変更時に `loaded` を自動リセット（古いプレビューが残る問題の防止） |
-| `Header.svelte` | 設定変更後に再ロードが必要な旨の視覚的フィードバック（任意） |
+
+---
+
+## Phase 1〜5 以外の実装済み機能
+
+フェーズ計画外で追加実装された機能。
+
+| 機能 | 実装箇所 | 内容 |
+|------|---------|------|
+| 設定の localStorage 永続化 | `settings-store.ts` | リポジトリ・ブランチ・openFile・projectRoot をセッション間で保持 |
+| プロジェクトプロファイル | `settings-store.ts`, `Header.svelte` | 名前付きで設定を保存・読み込み・削除できる |
+| GitHub URL パース | `Header.svelte` | `https://github.com/owner/repo` 形式のURLをそのまま入力可能 |
+| crossOriginIsolated オプション | `PreviewView.svelte` | StackBlitz VM 接続の安定性向上 |
 
 ---
 
@@ -138,10 +141,8 @@ jobs:
 Phase 1（Nostr除去）→ Phase 2（CD・公開）→ Phase 3（ブランチバグ修正）→ Phase 4（openFile設定）→ Phase 5（UX改善）
 ```
 
-Phase 1 完了済み。
-Phase 2 を先行実施することで、以降のフェーズをデプロイ済み環境で動作確認しながら進められる。
-Phase 3・4 は既存コードの修正・追加のみでリスクが低い。
-Phase 5 は仕上げのUX改善。
+Phase 1・3・4・5 完了済み。Phase 2（CD・公開）は未対応。
+次のステップは Phase 2 の実施、またはフィーチャーワーク（FW-1, FW-2）への移行。
 
 ---
 
