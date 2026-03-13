@@ -1,5 +1,10 @@
 # Nostr + StackBlitz フロントエンド開発ワークフロー 設計書 v3
 
+> **DEPRECATED**: This document describes the original Nostr + StackBlitz + GitHub Actions
+> architecture (v3), which was superseded after Phase 1 (removal of Nostr/Chat features).
+> The current implementation focuses on StackBlitz preview with local settings persistence.
+> See [README.md](../README.md) and [ROADMAP.md](../ROADMAP.md) for current status.
+
 ## 📋 概要
 
 GitHub上のフロントエンドリポジトリをStackBlitzでプレビューしつつ、Nostr経由でAI指示を送信し、GitHub Actionsで修正を反映する反復開発ワークフロー。
