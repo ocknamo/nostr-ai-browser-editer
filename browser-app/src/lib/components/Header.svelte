@@ -342,10 +342,12 @@
     gap: 0.4rem;
     align-items: center;
     margin-top: 0.4rem;
+    min-width: 0;
   }
 
   .profile-select {
     flex: 1;
+    min-width: 0;
     padding: 0.35rem 0.5rem;
     border: none;
     border-radius: 0.25rem;
@@ -355,6 +357,7 @@
   }
 
   .action-btn {
+    flex-shrink: 0;
     background: rgba(255,255,255,0.15);
     border: 1px solid rgba(255,255,255,0.3);
     color: white;
