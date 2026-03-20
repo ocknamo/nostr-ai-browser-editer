@@ -12,6 +12,7 @@
   } = $props();
 
   let loading = $state(false);
+  let checking = $state(false);
   let error = $state('');
   let loaded = $state(false);
   let statusMessage = $state('');
@@ -157,19 +158,34 @@
       loading = false;
     }
   }
+
+  /** Manually trigger an immediate commit check and apply any diff to the VM. */
+  async function handleCheckNow() {
+    if (!watcher) return;
+    checking = true;
+    await watcher.checkNow();
+    checking = false;
+  }
 </script>
 
 <div class="preview-view">
   <div class="controls">
-    <button class="load-button" onclick={handleLoad} disabled={loading || !repo.trim()}>
-      {#if loading}
-        Loading...
-      {:else if loaded}
-        Reload Preview
-      {:else}
-        Load Preview
+    <div class="button-row">
+      <button class="load-button" onclick={handleLoad} disabled={loading || !repo.trim()}>
+        {#if loading}
+          Loading...
+        {:else if loaded}
+          Reload Preview
+        {:else}
+          Load Preview
+        {/if}
+      </button>
+      {#if loaded}
+        <button class="check-button" onclick={handleCheckNow} disabled={checking}>
+          {checking ? 'Checking...' : 'Check Updates'}
+        </button>
       {/if}
-    </button>
+    </div>
     {#if statusMessage && loading}
       <p class="status">{statusMessage}</p>
     {/if}
@@ -210,7 +226,13 @@
     background: #f9fafb;
   }
 
+  .button-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
   .load-button {
+    flex: 1;
     width: 100%;
     padding: 0.5rem;
     background: #3b82f6;
@@ -229,6 +251,28 @@
 
   .load-button:disabled {
     background: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  .check-button {
+    padding: 0.5rem 0.75rem;
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s;
+  }
+
+  .check-button:hover:not(:disabled) {
+    background: #e5e7eb;
+  }
+
+  .check-button:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
   }
 

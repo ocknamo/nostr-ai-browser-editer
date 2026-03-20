@@ -68,6 +68,16 @@ export class RepoWatcher {
     this.scheduleNext();
   }
 
+  /**
+   * Run a commit check immediately, independent of the polling schedule.
+   * Safe to call while polling is active; the scheduled timer is unaffected.
+   */
+  checkNow(): Promise<void> {
+    return this.poll().catch((err) => {
+      console.warn('[repo-watcher] checkNow error:', err);
+    });
+  }
+
   /** Stop polling and clear state. */
   stop(): void {
     this.active = false;
