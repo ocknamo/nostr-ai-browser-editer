@@ -172,7 +172,7 @@
       </button>
       {#if loaded}
         <button class="check-button" onclick={handleCheckNow} disabled={checking || loading}>
-          {checking ? 'Checking...' : 'Check Now'}
+          {checking ? 'Syncing...' : 'Sync'}
         </button>
       {/if}
     </div>
@@ -222,7 +222,6 @@
 
   .load-button {
     flex: 1;
-    width: 100%;
     padding: 0.5rem;
     background: #3b82f6;
     color: white;
@@ -244,7 +243,8 @@
   }
 
   .check-button {
-    padding: 0.5rem 0.75rem;
+    flex: 1;
+    padding: 0.5rem;
     background: #f3f4f6;
     color: #374151;
     border: 1px solid #d1d5db;
