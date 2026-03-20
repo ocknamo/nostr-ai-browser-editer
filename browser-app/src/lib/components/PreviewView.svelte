@@ -1,14 +1,16 @@
 <script lang="ts">
   import sdk from '@stackblitz/sdk';
-  
+  import { isTimeoutError } from '../stackblitz-utils';
+
   let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
     repo?: string;
     branch?: string;
     openFile?: string;
     projectRoot?: string;
   } = $props();
-  
+
   let loading = $state(false);
+  let retrying = $state(false);
   let error = $state('');
   let errorDetail = $state('');
   let loaded = $state(false);
@@ -51,63 +53,78 @@
       error = 'Please enter a repository';
       return;
     }
-    
+
+    const MAX_RETRIES = 1;
     loading = true;
+    retrying = false;
     error = '';
     errorDetail = '';
-    
-    try {
-      // Clear existing preview and get container height
-      const container = document.getElementById('preview-container');
-      if (container) {
-        container.innerHTML = '';
-      }
-      
-      // Normalize repo format and build path with optional branch and project root.
-      // StackBlitz supports subdirectory embedding via owner/repo/tree/branch/subdir format.
-      const normalizedRepo = parseGitHubRepo(repo);
-      // Encode the branch name so slashes (e.g. "claude/fix-foo") become %2F,
-      // preventing StackBlitz from misinterpreting path segments as branch vs subdirectory.
-      const branchSegment = branch ? `/tree/${encodeURIComponent(branch)}` : '';
-      const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
-      const repoPath = `${normalizedRepo}${branchSegment}${rootSegment}`;
 
-      // Get container height for full-height iframe
-      const containerHeight = container?.parentElement?.clientHeight || 600;
-
-      await sdk.embedGithubProject(
-        'preview-container',
-        repoPath,
-        {
-          forceEmbedLayout: true,
-          view: 'preview',
-          height: containerHeight,
-          ...(openFile.trim() ? { openFile: openFile.trim() } : {}),
-          theme: 'light',
-          // Required when the parent page is cross-origin isolated (COOP + COEP headers).
-          // This adds allow="cross-origin-isolated" to the embedded iframe element.
-          // Without this, the StackBlitz VM connection times out in isolated contexts.
-          // See: https://blog.stackblitz.com/posts/cross-browser-with-coop-coep/
-          crossOriginIsolated: true
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        // Clear existing preview and get container height
+        const container = document.getElementById('preview-container');
+        if (container) {
+          container.innerHTML = '';
         }
-      );
-      loaded = true;
-    } catch (err) {
-      if (err instanceof Error) {
-        error = `Failed to load preview: ${err.message}`;
-        errorDetail = err.stack ?? '';
-      } else {
-        error = 'Failed to load preview: Unknown error';
-        try {
-          errorDetail = JSON.stringify(err, null, 2);
-        } catch {
-          errorDetail = String(err);
+
+        // Normalize repo format and build path with optional branch and project root.
+        // StackBlitz supports subdirectory embedding via owner/repo/tree/branch/subdir format.
+        const normalizedRepo = parseGitHubRepo(repo);
+        // Encode the branch name so slashes (e.g. "claude/fix-foo") become %2F,
+        // preventing StackBlitz from misinterpreting path segments as branch vs subdirectory.
+        const branchSegment = branch ? `/tree/${encodeURIComponent(branch)}` : '';
+        const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
+        const repoPath = `${normalizedRepo}${branchSegment}${rootSegment}`;
+
+        // Get container height for full-height iframe
+        const containerHeight = container?.parentElement?.clientHeight || 600;
+
+        await sdk.embedGithubProject(
+          'preview-container',
+          repoPath,
+          {
+            forceEmbedLayout: true,
+            view: 'preview',
+            height: containerHeight,
+            ...(openFile.trim() ? { openFile: openFile.trim() } : {}),
+            theme: 'light',
+            // Required when the parent page is cross-origin isolated (COOP + COEP headers).
+            // This adds allow="cross-origin-isolated" to the embedded iframe element.
+            // Without this, the StackBlitz VM connection times out in isolated contexts.
+            // See: https://blog.stackblitz.com/posts/cross-browser-with-coop-coep/
+            crossOriginIsolated: true
+          }
+        );
+
+        loaded = true;
+        retrying = false;
+        break;
+      } catch (err) {
+        console.error('StackBlitz error:', err);
+
+        // On the first timeout, silently retry once instead of showing an error.
+        if (isTimeoutError(err) && attempt < MAX_RETRIES) {
+          retrying = true;
+          continue;
+        }
+
+        retrying = false;
+        if (err instanceof Error) {
+          error = `Failed to load preview: ${err.message}`;
+          errorDetail = err.stack ?? '';
+        } else {
+          error = 'Failed to load preview: Unknown error';
+          try {
+            errorDetail = JSON.stringify(err, null, 2);
+          } catch {
+            errorDetail = String(err);
+          }
         }
       }
-      console.error('StackBlitz error:', err);
-    } finally {
-      loading = false;
     }
+
+    loading = false;
   }
 </script>
 
@@ -138,7 +155,7 @@
       </div>
     {:else if loading && !loaded}
       <div class="placeholder">
-        <p>⏳ Loading StackBlitz preview...</p>
+        <p>{retrying ? 'Retrying...' : 'Loading StackBlitz preview...'}</p>
         <p class="help">This may take a moment</p>
       </div>
     {/if}
