@@ -126,6 +126,11 @@
       loaded = true;
       statusMessage = '';
 
+      // DEBUG: expose vm for manual applyFsDiff testing from the browser console.
+      // Usage: await window.__previewVm.applyFsDiff({ create: { 'src/App.svelte': '...' } })
+      // Remove before release.
+      (window as Record<string, unknown>)['__previewVm'] = vm;
+
       // 3. Start polling for new commits; apply file diffs via the VM
       watcher = new RepoWatcher(owner, repoName, ref, vm, root);
       if (commitResult) {
