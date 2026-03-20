@@ -1,24 +1,35 @@
 /**
- * Polls a GitHub branch for new commits and reports changed files.
+ * Polls a GitHub branch for new commits and applies file diffs to a StackBlitz VM.
  * Uses ETag-based conditional requests to avoid redundant API calls and stay
  * within the 60 requests/hour unauthenticated rate limit.
+ *
+ * On a new commit:
+ *  - changed/added files are fetched and written via vm.applyFsDiff({ create })
+ *  - removed files are passed via vm.applyFsDiff({ destroy })
+ *  - Vite HMR inside the WebContainer picks up the changes without a full reload
  */
+import type { VM } from '@stackblitz/sdk';
 import { fetchLatestCommit, fetchChangedFiles, fetchRawFile } from './github-api';
-import { transformFile } from '../preview/esbuild-transformer';
-import { vfs } from '../vfs/virtual-fs';
-import { updateSWFiles } from '../preview/sw-manager';
 
 /** Interval between commit checks in milliseconds. */
 const POLL_INTERVAL_MS = 60_000;
 
-/** Callback invoked after the VFS and SW have been updated with changed files. */
+/** Optional callback invoked after the VM diff has been applied. */
 export type OnUpdateCallback = (changedPaths: string[]) => void;
 
 export class RepoWatcher {
   private owner: string;
   private repo: string;
   private branch: string;
-  private onUpdate: OnUpdateCallback;
+  /** StackBlitz VM used to apply incremental file diffs. */
+  private vm: VM;
+  /**
+   * Repository subdirectory that was passed to embedGithubProject.
+   * Changed file paths from the compare API are filtered to this prefix
+   * and the prefix is stripped before being sent to vm.applyFsDiff.
+   */
+  private projectRoot: string;
+  private onUpdate: OnUpdateCallback | null;
 
   private currentSha = '';
   private currentEtag: string | null = null;
@@ -29,11 +40,15 @@ export class RepoWatcher {
     owner: string,
     repo: string,
     branch: string,
-    onUpdate: OnUpdateCallback,
+    vm: VM,
+    projectRoot = '',
+    onUpdate: OnUpdateCallback | null = null,
   ) {
     this.owner = owner;
     this.repo = repo;
     this.branch = branch;
+    this.vm = vm;
+    this.projectRoot = projectRoot;
     this.onUpdate = onUpdate;
   }
 
@@ -64,23 +79,16 @@ export class RepoWatcher {
     this.currentEtag = null;
   }
 
-  /** Update the watched repository coordinates. Triggers a new poll cycle. */
-  updateRef(owner: string, repo: string, branch: string): void {
-    this.owner = owner;
-    this.repo = repo;
-    this.branch = branch;
-    this.currentSha = '';
-    this.currentEtag = null;
-  }
-
   private scheduleNext(): void {
     if (!this.active) return;
     this.timerId = setTimeout(() => {
-      this.poll().catch((err) => {
-        console.warn('[repo-watcher] Poll error:', err);
-      }).finally(() => {
-        this.scheduleNext();
-      });
+      this.poll()
+        .catch((err) => {
+          console.warn('[repo-watcher] Poll error:', err);
+        })
+        .finally(() => {
+          this.scheduleNext();
+        });
     }, POLL_INTERVAL_MS);
   }
 
@@ -101,7 +109,7 @@ export class RepoWatcher {
     this.currentEtag = result.etag;
 
     if (!this.currentSha || newSha === this.currentSha) {
-      // First poll or no change in SHA
+      // First poll or SHA unchanged
       this.currentSha = newSha;
       return;
     }
@@ -109,7 +117,6 @@ export class RepoWatcher {
     const baseSha = this.currentSha;
     this.currentSha = newSha;
 
-    // Fetch diff and apply changes
     const { changedFiles, removedFiles } = await fetchChangedFiles(
       this.owner,
       this.repo,
@@ -117,31 +124,33 @@ export class RepoWatcher {
       newSha,
     );
 
-    if (changedFiles.length === 0 && removedFiles.length === 0) return;
+    // Filter paths to the project root subdirectory and strip the prefix.
+    // Paths that fall outside the root are irrelevant to the embedded project.
+    const rootPrefix = this.projectRoot ? `${this.projectRoot}/` : '';
+    const toRelative = (p: string) => (rootPrefix ? p.slice(rootPrefix.length) : p);
+    const inRoot = (p: string) => !rootPrefix || p.startsWith(rootPrefix);
 
-    // Fetch and transform changed files
-    const updatedEntries: Record<string, string> = {};
+    const relChanged = changedFiles.filter(inRoot).map(toRelative);
+    const relRemoved = removedFiles.filter(inRoot).map(toRelative);
+
+    if (relChanged.length === 0 && relRemoved.length === 0) return;
+
+    // Fetch content for each changed/added file
+    const create: Record<string, string> = {};
     await Promise.all(
-      changedFiles.map(async (path) => {
+      relChanged.map(async (relPath) => {
+        const repoPath = rootPrefix + relPath;
         try {
-          const raw = await fetchRawFile(this.owner, this.repo, this.branch, path);
-          const transformed = await transformFile(path, raw);
-          vfs.set(path, transformed);
-          updatedEntries[path] = transformed;
+          create[relPath] = await fetchRawFile(this.owner, this.repo, this.branch, repoPath);
         } catch (err) {
-          console.warn(`[repo-watcher] Failed to update file ${path}:`, err);
+          console.warn(`[repo-watcher] Failed to fetch ${repoPath}:`, err);
         }
       }),
     );
 
-    // Remove deleted files from VFS
-    for (const path of removedFiles) {
-      vfs.delete(path);
-    }
+    // Apply the diff; Vite HMR inside the WebContainer handles the rest
+    await this.vm.applyFsDiff({ create, destroy: relRemoved });
 
-    // Push changes to Service Worker
-    updateSWFiles(updatedEntries, removedFiles);
-
-    this.onUpdate([...changedFiles, ...removedFiles]);
+    this.onUpdate?.([...relChanged, ...relRemoved]);
   }
 }

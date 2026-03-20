@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { fetchRepoTree, fetchRawFile, fetchLatestCommit } from '../github/github-api';
-  import { transformFile, initializeEsbuild } from '../preview/esbuild-transformer';
-  import { vfs } from '../vfs/virtual-fs';
-  import { registerPreviewSW, syncVFSToSW } from '../preview/sw-manager';
+  import sdk from '@stackblitz/sdk';
+  import type { VM } from '@stackblitz/sdk';
+  import { fetchLatestCommit } from '../github/github-api';
   import { RepoWatcher } from '../github/repo-watcher';
 
   let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
@@ -16,8 +15,9 @@
   let error = $state('');
   let loaded = $state(false);
   let statusMessage = $state('');
-  let iframeEl = $state<HTMLIFrameElement | null>(null);
+  let containerEl = $state<HTMLDivElement | null>(null);
 
+  let vm: VM | null = null;
   let watcher: RepoWatcher | null = null;
 
   // Reset loaded state when repo or branch changes
@@ -27,6 +27,7 @@
       error = '';
       statusMessage = '';
       stopWatcher();
+      vm = null;
     }
   });
 
@@ -68,13 +69,6 @@
     }
   }
 
-  /** Reload the preview iframe after a VFS update. */
-  function reloadIframe(): void {
-    if (iframeEl) {
-      iframeEl.contentWindow?.location.reload();
-    }
-  }
-
   async function handleLoad() {
     if (!repo.trim()) {
       error = 'Please enter a repository';
@@ -88,7 +82,7 @@
     }
 
     const { owner, repo: repoName } = parsed;
-    const ref = branch.trim() || 'HEAD';
+    const ref = branch.trim() || 'main';
     const root = projectRoot.trim();
 
     loading = true;
@@ -96,110 +90,51 @@
     error = '';
     statusMessage = '';
     stopWatcher();
-    vfs.clear();
-
-    console.log('[PreviewView] handleLoad start', { owner, repoName, ref, root });
+    vm = null;
 
     try {
-      // 1. Register Service Worker
-      statusMessage = 'Registering service worker...';
-      console.log('[PreviewView] step 1: registering SW');
-      await registerPreviewSW();
-      console.log('[PreviewView] step 1: SW registered');
-
-      // 2. Initialize esbuild-wasm (loads ~7MB wasm binary on first call)
-      statusMessage = 'Initializing transpiler...';
-      console.log('[PreviewView] step 2: initializing esbuild');
-      await initializeEsbuild();
-      console.log('[PreviewView] step 2: esbuild ready');
-
-      // 3. Fetch the latest commit SHA for update polling
+      // 1. Fetch the latest commit SHA for update polling
       statusMessage = 'Fetching repository info...';
-      console.log('[PreviewView] step 3: fetchLatestCommit', { owner, repoName, ref });
       const commitResult = await fetchLatestCommit(owner, repoName, ref);
       const sha = commitResult?.sha ?? ref;
       const etag = commitResult?.etag ?? null;
-      console.log('[PreviewView] step 3: commit', { sha, etag });
 
-      // 4. Fetch the file tree using the branch ref (not commit SHA).
-      // The Git Trees API accepts a branch name or tag as the ref parameter.
-      statusMessage = 'Fetching file tree...';
-      console.log('[PreviewView] step 4: fetchRepoTree', { owner, repoName, ref });
-      const treeFiles = await fetchRepoTree(owner, repoName, ref);
-      console.log('[PreviewView] step 4: tree files count', treeFiles.length);
+      // 2. Embed via StackBlitz SDK.
+      // embedGithubProject handles npm install and starts the dev server internally.
+      // The path format supports subdirectory: owner/repo/tree/branch[/subdir]
+      const projectPath = root
+        ? `${owner}/${repoName}/tree/${encodeURIComponent(ref)}/${root}`
+        : `${owner}/${repoName}/tree/${encodeURIComponent(ref)}`;
 
-      // Filter to project root subdirectory if specified
-      const relevantFiles = root
-        ? treeFiles.filter((f) => f.path.startsWith(root + '/'))
-        : treeFiles;
+      statusMessage = 'Starting preview (npm install in progress)...';
 
-      console.log('[PreviewView] relevant files count', relevantFiles.length, 'root:', root || '(none)');
+      if (!containerEl) throw new Error('Container element not found');
 
-      if (relevantFiles.length === 0) {
-        throw new Error(
-          root
-            ? `No files found under "${root}" in ${owner}/${repoName}`
-            : `No files found in ${owner}/${repoName}`,
-        );
-      }
-
-      // 5. Fetch and transform each file
-      const total = relevantFiles.length;
-      let done = 0;
-      console.log('[PreviewView] step 5: fetching and transforming', total, 'files');
-
-      await Promise.all(
-        relevantFiles.map(async (file) => {
-          const vfsPath = root ? file.path.slice(root.length + 1) : file.path;
-          console.log('[PreviewView] fetching file:', file.path, '->', vfsPath);
-          const raw = await fetchRawFile(owner, repoName, ref, file.path);
-          const transformed = await transformFile(vfsPath, raw);
-          vfs.set(vfsPath, transformed);
-          done++;
-          statusMessage = `Loading files... (${done}/${total})`;
-        }),
+      vm = await sdk.embedGithubProject(
+        containerEl,
+        projectPath,
+        {
+          view: 'preview',
+          hideExplorer: true,
+          hideNavigation: true,
+          forceEmbedLayout: true,
+          crossOriginIsolated: true,
+          ...(openFile.trim() ? { openFile: openFile.trim() } : {}),
+        },
       );
-      console.log('[PreviewView] step 5: all files loaded');
-
-      // 6. Push VFS to Service Worker
-      statusMessage = 'Syncing to service worker...';
-      const snapshot = vfs.toSnapshot();
-      console.log('[PreviewView] step 6: syncing VFS to SW, entries:', Object.keys(snapshot).length);
-      await syncVFSToSW(snapshot);
-      console.log('[PreviewView] step 6: SW acknowledged VFS ready');
-
-      // 7. Point the iframe at /preview/
-      const entryPath = openFile.trim() ? openFile.trim() : 'index.html';
-      console.log('[PreviewView] step 7: setting iframe src to /preview/' + entryPath);
-      if (iframeEl) {
-        iframeEl.src = `/preview/${entryPath}`;
-      } else {
-        console.warn('[PreviewView] step 7: iframeEl is null!');
-      }
 
       loaded = true;
       statusMessage = '';
 
-      // 8. Start update watcher
-      watcher = new RepoWatcher(owner, repoName, ref, (changedPaths) => {
-        console.log('[preview] Files updated:', changedPaths);
-        reloadIframe();
-      });
+      // 3. Start polling for new commits; apply file diffs via the VM
+      watcher = new RepoWatcher(owner, repoName, ref, vm, root);
       if (commitResult) {
         watcher.setBaseCommit(sha, etag);
       }
       watcher.start();
     } catch (err) {
-      console.error('[PreviewView] Load error:', err);
-      console.error('[PreviewView] Error type:', typeof err, err instanceof Error ? err.stack : '');
       if (err instanceof Error) {
         error = `Failed to load preview: ${err.message}`;
-      } else if (err && typeof err === 'object' && 'errors' in err) {
-        // esbuild TransformFailure / BuildFailure shape: { errors: [{ text }] }
-        const messages = (err as { errors: Array<{ text: string }> }).errors
-          .map((e) => e.text)
-          .join('; ');
-        error = `Failed to load preview: ${messages || JSON.stringify(err)}`;
       } else {
         try {
           error = `Failed to load preview: ${JSON.stringify(err)}`;
@@ -238,21 +173,18 @@
       <div class="placeholder">
         <p>Enter a GitHub repository and click "Load Preview"</p>
         <p class="help">Example: facebook/react or https://github.com/owner/repo</p>
-        <p class="help">Supports vanilla JS, TypeScript, and JSX projects</p>
       </div>
     {:else if loading}
       <div class="placeholder">
         <p>{statusMessage || 'Loading...'}</p>
       </div>
     {/if}
-    <!-- svelte-ignore a11y_missing_attribute -->
-    <iframe
-      bind:this={iframeEl}
-      class="preview-iframe"
+    <!-- StackBlitz iframe is injected into this element -->
+    <div
+      bind:this={containerEl}
+      class="stackblitz-container"
       style:display={loaded ? 'block' : 'none'}
-      sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
-      title="Repository Preview"
-    ></iframe>
+    ></div>
   </div>
 </div>
 
@@ -338,10 +270,16 @@
     opacity: 0.7;
   }
 
-  .preview-iframe {
+  .stackblitz-container {
     width: 100%;
     flex: 1;
-    border: none;
     min-height: 0;
+  }
+
+  /* StackBlitz injects an iframe; make it fill the container */
+  .stackblitz-container :global(iframe) {
+    width: 100%;
+    height: 100%;
+    border: none;
   }
 </style>
