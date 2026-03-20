@@ -14,15 +14,18 @@ export function isTimeoutError(err: unknown): boolean {
 /**
  * Build the StackBlitz GitHub project path from a normalized repo, branch, and projectRoot.
  *
- * Branch names are URL-encoded to handle slashes (e.g. "claude/fix-foo" becomes
- * "claude%2Ffix-foo"), preventing StackBlitz from misinterpreting path segments.
+ * Branch names must NOT be percent-encoded. StackBlitz uses "/" as its own path separator
+ * (same as github.com URLs), so encoding slashes (e.g. "feature/foo" -> "feature%2Ffoo")
+ * causes an "Invalid Element" error in the SDK.
+ *
+ * For GitHub API URL segments, use encodeURIComponent separately — that is a different concern.
  */
 export function buildStackblitzPath(
   normalizedRepo: string,
   branch: string,
   projectRoot: string,
 ): string {
-  const branchSegment = branch ? `/tree/${encodeURIComponent(branch)}` : '';
+  const branchSegment = branch ? `/tree/${branch}` : '';
   const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
   return `${normalizedRepo}${branchSegment}${rootSegment}`;
 }

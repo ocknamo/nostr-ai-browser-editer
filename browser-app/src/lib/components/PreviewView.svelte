@@ -2,6 +2,8 @@
   import sdk from '@stackblitz/sdk';
   import { isTimeoutError, buildStackblitzPath } from '../stackblitz-utils';
   import { parseGitHubRepo } from '../github-utils';
+  import { fetchLatestCommit } from '../github/github-api';
+  import { RepoWatcher } from '../github/repo-watcher';
 
   let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
     repo?: string;
@@ -16,21 +18,37 @@
   let errorDetail = $state('');
   let loaded = $state(false);
 
-  // Reset loaded state when repo or branch changes so the stale preview is cleared
+  // Current incremental update watcher; not reactive (template does not reference it).
+  let watcher: RepoWatcher | null = null;
+
+  // Stop watcher and reset UI state when repo or branch changes.
   $effect(() => {
-    // Referencing repo and branch registers them as reactive dependencies
+    // Referencing repo and branch registers them as reactive dependencies.
     if (repo !== undefined && branch !== undefined) {
       loaded = false;
       error = '';
       errorDetail = '';
+      watcher?.stop();
+      watcher = null;
     }
   });
-  
+
+  // Stop watcher when the component is destroyed.
+  $effect(() => {
+    return () => {
+      watcher?.stop();
+    };
+  });
+
   async function handleLoad() {
     if (!repo.trim()) {
       error = 'Please enter a repository';
       return;
     }
+
+    // Stop any existing watcher before starting a new embed.
+    watcher?.stop();
+    watcher = null;
 
     const MAX_RETRIES = 1;
     loading = true;
@@ -40,7 +58,7 @@
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        // Clear existing preview and get container height
+        // Clear existing preview and get container height.
         const container = document.getElementById('preview-container');
         if (container) {
           container.innerHTML = '';
@@ -50,10 +68,10 @@
         const normalizedRepo = parseGitHubRepo(repo);
         const repoPath = buildStackblitzPath(normalizedRepo, branch, projectRoot);
 
-        // Get container height for full-height iframe
+        // Get container height for full-height iframe.
         const containerHeight = container?.parentElement?.clientHeight || 600;
 
-        await sdk.embedGithubProject(
+        const vm = await sdk.embedGithubProject(
           'preview-container',
           repoPath,
           {
@@ -66,12 +84,16 @@
             // This adds allow="cross-origin-isolated" to the embedded iframe element.
             // Without this, the StackBlitz VM connection times out in isolated contexts.
             // See: https://blog.stackblitz.com/posts/cross-browser-with-coop-coep/
-            crossOriginIsolated: true
-          }
+            crossOriginIsolated: true,
+          },
         );
 
         loaded = true;
         retrying = false;
+
+        // Start incremental diff polling after a successful embed.
+        await startWatcher(normalizedRepo, vm);
+
         break;
       } catch (err) {
         console.error('StackBlitz error:', err);
@@ -98,6 +120,32 @@
     }
 
     loading = false;
+  }
+
+  /**
+   * Create and start a RepoWatcher for the embedded VM.
+   *
+   * Fetches the current HEAD commit to seed the base SHA so the first poll
+   * does not perform a redundant compare against an unknown state.
+   */
+  async function startWatcher(normalizedRepo: string, vm: Awaited<ReturnType<typeof sdk.embedGithubProject>>) {
+    const [owner, repoName] = normalizedRepo.split('/');
+    if (!owner || !repoName) return;
+
+    const newWatcher = new RepoWatcher(owner, repoName, branch, projectRoot);
+    newWatcher.setVm(vm);
+
+    try {
+      const commit = await fetchLatestCommit(owner, repoName, branch);
+      if (commit) {
+        newWatcher.setBaseCommit(commit.sha, commit.etag);
+      }
+    } catch (err) {
+      console.warn('[PreviewView] Could not fetch initial commit for watcher:', err);
+    }
+
+    newWatcher.start();
+    watcher = newWatcher;
   }
 </script>
 

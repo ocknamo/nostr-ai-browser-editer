@@ -58,9 +58,9 @@ describe('buildStackblitzPath', () => {
     );
   });
 
-  it('URL-encodes slashes in branch names', () => {
+  it('does not encode slashes in branch names', () => {
     expect(buildStackblitzPath('owner/repo', 'claude/fix-foo', '')).toBe(
-      'owner/repo/tree/claude%2Ffix-foo',
+      'owner/repo/tree/claude/fix-foo',
     );
   });
 
