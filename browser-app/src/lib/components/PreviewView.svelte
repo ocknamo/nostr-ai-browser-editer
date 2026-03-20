@@ -98,30 +98,42 @@
     stopWatcher();
     vfs.clear();
 
+    console.log('[PreviewView] handleLoad start', { owner, repoName, ref, root });
+
     try {
       // 1. Register Service Worker
       statusMessage = 'Registering service worker...';
+      console.log('[PreviewView] step 1: registering SW');
       await registerPreviewSW();
+      console.log('[PreviewView] step 1: SW registered');
 
       // 2. Initialize esbuild-wasm (loads ~7MB wasm binary on first call)
       statusMessage = 'Initializing transpiler...';
+      console.log('[PreviewView] step 2: initializing esbuild');
       await initializeEsbuild();
+      console.log('[PreviewView] step 2: esbuild ready');
 
       // 3. Fetch the latest commit SHA for update polling
       statusMessage = 'Fetching repository info...';
+      console.log('[PreviewView] step 3: fetchLatestCommit', { owner, repoName, ref });
       const commitResult = await fetchLatestCommit(owner, repoName, ref);
       const sha = commitResult?.sha ?? ref;
       const etag = commitResult?.etag ?? null;
+      console.log('[PreviewView] step 3: commit', { sha, etag });
 
       // 4. Fetch the file tree using the branch ref (not commit SHA).
       // The Git Trees API accepts a branch name or tag as the ref parameter.
       statusMessage = 'Fetching file tree...';
+      console.log('[PreviewView] step 4: fetchRepoTree', { owner, repoName, ref });
       const treeFiles = await fetchRepoTree(owner, repoName, ref);
+      console.log('[PreviewView] step 4: tree files count', treeFiles.length);
 
       // Filter to project root subdirectory if specified
       const relevantFiles = root
         ? treeFiles.filter((f) => f.path.startsWith(root + '/'))
         : treeFiles;
+
+      console.log('[PreviewView] relevant files count', relevantFiles.length, 'root:', root || '(none)');
 
       if (relevantFiles.length === 0) {
         throw new Error(
@@ -134,10 +146,12 @@
       // 5. Fetch and transform each file
       const total = relevantFiles.length;
       let done = 0;
+      console.log('[PreviewView] step 5: fetching and transforming', total, 'files');
 
       await Promise.all(
         relevantFiles.map(async (file) => {
           const vfsPath = root ? file.path.slice(root.length + 1) : file.path;
+          console.log('[PreviewView] fetching file:', file.path, '->', vfsPath);
           const raw = await fetchRawFile(owner, repoName, ref, file.path);
           const transformed = await transformFile(vfsPath, raw);
           vfs.set(vfsPath, transformed);
@@ -145,15 +159,21 @@
           statusMessage = `Loading files... (${done}/${total})`;
         }),
       );
+      console.log('[PreviewView] step 5: all files loaded');
 
       // 6. Push VFS to Service Worker
       statusMessage = 'Syncing to service worker...';
-      syncVFSToSW(vfs.toSnapshot());
+      const snapshot = vfs.toSnapshot();
+      console.log('[PreviewView] step 6: syncing VFS to SW, entries:', Object.keys(snapshot).length);
+      syncVFSToSW(snapshot);
 
       // 7. Point the iframe at /preview/
       const entryPath = openFile.trim() ? openFile.trim() : 'index.html';
+      console.log('[PreviewView] step 7: setting iframe src to /preview/' + entryPath);
       if (iframeEl) {
         iframeEl.src = `/preview/${entryPath}`;
+      } else {
+        console.warn('[PreviewView] step 7: iframeEl is null!');
       }
 
       loaded = true;
@@ -170,6 +190,7 @@
       watcher.start();
     } catch (err) {
       console.error('[PreviewView] Load error:', err);
+      console.error('[PreviewView] Error type:', typeof err, err instanceof Error ? err.stack : '');
       if (err instanceof Error) {
         error = `Failed to load preview: ${err.message}`;
       } else if (err && typeof err === 'object' && 'errors' in err) {

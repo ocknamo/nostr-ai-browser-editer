@@ -18,6 +18,7 @@ export async function registerPreviewSW(): Promise<ServiceWorkerRegistration> {
     throw new Error('Service Workers are not supported in this browser.');
   }
 
+  console.log('[sw-manager] registering SW:', SW_SCRIPT);
   channel = new BroadcastChannel(CHANNEL_NAME);
 
   const registration = await navigator.serviceWorker.register(SW_SCRIPT, {
@@ -25,14 +26,21 @@ export async function registerPreviewSW(): Promise<ServiceWorkerRegistration> {
     scope: '/',
   });
 
+  console.log('[sw-manager] SW registration state - installing:', !!registration.installing, 'waiting:', !!registration.waiting, 'active:', !!registration.active);
+
   // Wait for the SW to become active before returning so callers can immediately
   // send VFS data without messages being dropped.
   if (registration.installing) {
+    console.log('[sw-manager] waiting for SW to activate (installing)');
     await waitForState(registration.installing, 'activated');
   } else if (registration.waiting) {
+    console.log('[sw-manager] waiting for SW to activate (waiting)');
     await waitForState(registration.waiting, 'activated');
+  } else {
+    console.log('[sw-manager] SW already active');
   }
 
+  console.log('[sw-manager] SW active, scope:', registration.scope);
   return registration;
 }
 
@@ -45,6 +53,7 @@ export function syncVFSToSW(snapshot: Record<string, string>): void {
     console.warn('[sw-manager] BroadcastChannel not open. Call registerPreviewSW() first.');
     return;
   }
+  console.log('[sw-manager] posting vfs-init with', Object.keys(snapshot).length, 'files');
   channel.postMessage({ type: 'vfs-init', files: snapshot });
 }
 
