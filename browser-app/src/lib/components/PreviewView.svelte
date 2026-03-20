@@ -101,14 +101,19 @@
 
       // 2. Embed via StackBlitz SDK.
       // embedGithubProject handles npm install and starts the dev server internally.
-      // The path format supports subdirectory: owner/repo/tree/branch[/subdir]
+      // The path format mirrors GitHub URLs: owner/repo/tree/branch[/subdir].
+      // Slashes in the branch name must NOT be percent-encoded because StackBlitz
+      // uses "/" as its own path separator (same as github.com/owner/repo/tree/...).
       const projectPath = root
-        ? `${owner}/${repoName}/tree/${encodeURIComponent(ref)}/${root}`
-        : `${owner}/${repoName}/tree/${encodeURIComponent(ref)}`;
+        ? `${owner}/${repoName}/tree/${ref}/${root}`
+        : `${owner}/${repoName}/tree/${ref}`;
 
       statusMessage = 'Starting preview (npm install in progress)...';
 
       if (!containerEl) throw new Error('Container element not found');
+
+      // Clear any existing iframe from a previous embed before re-embedding.
+      containerEl.innerHTML = '';
 
       vm = await sdk.embedGithubProject(
         containerEl,
@@ -129,7 +134,7 @@
       // DEBUG: expose vm for manual applyFsDiff testing from the browser console.
       // Usage: await window.__previewVm.applyFsDiff({ create: { 'src/App.svelte': '...' } })
       // Remove before release.
-      (window as Record<string, unknown>)['__previewVm'] = vm;
+      (window as unknown as Record<string, unknown>)['__previewVm'] = vm;
 
       // 3. Start polling for new commits; apply file diffs via the VM
       watcher = new RepoWatcher(owner, repoName, ref, vm, root);
@@ -174,22 +179,20 @@
   </div>
 
   <div class="preview-container">
-    {#if !loaded && !loading}
+    <!-- StackBlitz iframe is injected into this element. Must always be in the
+         DOM and visible so the SDK can measure and embed into it correctly. -->
+    <div bind:this={containerEl} class="stackblitz-container"></div>
+    <!-- Overlay shown before the embed is ready -->
+    {#if !loaded}
       <div class="placeholder">
-        <p>Enter a GitHub repository and click "Load Preview"</p>
-        <p class="help">Example: facebook/react or https://github.com/owner/repo</p>
-      </div>
-    {:else if loading}
-      <div class="placeholder">
-        <p>{statusMessage || 'Loading...'}</p>
+        {#if loading}
+          <p>{statusMessage || 'Loading...'}</p>
+        {:else}
+          <p>Enter a GitHub repository and click "Load Preview"</p>
+          <p class="help">Example: facebook/react or https://github.com/owner/repo</p>
+        {/if}
       </div>
     {/if}
-    <!-- StackBlitz iframe is injected into this element -->
-    <div
-      bind:this={containerEl}
-      class="stackblitz-container"
-      style:display={loaded ? 'block' : 'none'}
-    ></div>
   </div>
 </div>
 
@@ -256,14 +259,17 @@
   }
 
   .placeholder {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
+    background: white;
     color: #6b7280;
     text-align: center;
     padding: 2rem;
+    z-index: 1;
   }
 
   .placeholder p {
@@ -277,8 +283,7 @@
 
   .stackblitz-container {
     width: 100%;
-    flex: 1;
-    min-height: 0;
+    height: 100%;
   }
 
   /* StackBlitz injects an iframe; make it fill the container */
