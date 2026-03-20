@@ -1,6 +1,9 @@
 <script lang="ts">
-  import sdk from '@stackblitz/sdk';
-  import { isTimeoutError } from '../stackblitz-utils';
+  import { fetchRepoTree, fetchRawFile, fetchLatestCommit } from '../github/github-api';
+  import { transformFile, initializeEsbuild } from '../preview/esbuild-transformer';
+  import { vfs } from '../vfs/virtual-fs';
+  import { registerPreviewSW, syncVFSToSW } from '../preview/sw-manager';
+  import { RepoWatcher } from '../github/repo-watcher';
 
   let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
     repo?: string;
@@ -10,121 +13,171 @@
   } = $props();
 
   let loading = $state(false);
-  let retrying = $state(false);
   let error = $state('');
-  let errorDetail = $state('');
   let loaded = $state(false);
+  let statusMessage = $state('');
+  let iframeEl = $state<HTMLIFrameElement | null>(null);
 
-  // Reset loaded state when repo or branch changes so the stale preview is cleared
+  let watcher: RepoWatcher | null = null;
+
+  // Reset loaded state when repo or branch changes
   $effect(() => {
-    // Referencing repo and branch registers them as reactive dependencies
     if (repo !== undefined && branch !== undefined) {
       loaded = false;
       error = '';
-      errorDetail = '';
+      statusMessage = '';
+      stopWatcher();
     }
   });
-  
-  // Parse GitHub URL to owner/repo format
-  function parseGitHubRepo(input: string): string {
-    // If it's already in owner/repo format, return as-is
-    if (/^[^/]+\/[^/]+$/.test(input.trim())) {
-      return input.trim();
+
+  // Clean up watcher on component destroy
+  $effect(() => {
+    return () => stopWatcher();
+  });
+
+  /** Parse a GitHub URL or owner/repo string into owner/repo format. */
+  function parseGitHubRepo(input: string): { owner: string; repo: string } | null {
+    const trimmed = input.trim();
+
+    // owner/repo format
+    if (/^[^/]+\/[^/]+$/.test(trimmed)) {
+      const [owner, repoName] = trimmed.split('/');
+      return { owner, repo: repoName };
     }
-    
-    // Try to parse GitHub URL
+
+    // https://github.com/owner/repo URL
     try {
-      const url = new URL(input);
+      const url = new URL(trimmed);
       if (url.hostname === 'github.com') {
-        const parts = url.pathname.split('/').filter(p => p);
+        const parts = url.pathname.split('/').filter((p) => p);
         if (parts.length >= 2) {
-          return `${parts[0]}/${parts[1]}`;
+          return { owner: parts[0], repo: parts[1] };
         }
       }
     } catch {
-      // Not a valid URL, return as-is
+      // Not a valid URL
     }
-    
-    return input.trim();
+
+    return null;
   }
-  
+
+  function stopWatcher(): void {
+    if (watcher) {
+      watcher.stop();
+      watcher = null;
+    }
+  }
+
+  /** Reload the preview iframe after a VFS update. */
+  function reloadIframe(): void {
+    if (iframeEl) {
+      iframeEl.contentWindow?.location.reload();
+    }
+  }
+
   async function handleLoad() {
     if (!repo.trim()) {
       error = 'Please enter a repository';
       return;
     }
 
-    const MAX_RETRIES = 1;
-    loading = true;
-    retrying = false;
-    error = '';
-    errorDetail = '';
-
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        // Clear existing preview and get container height
-        const container = document.getElementById('preview-container');
-        if (container) {
-          container.innerHTML = '';
-        }
-
-        // Normalize repo format and build path with optional branch and project root.
-        // StackBlitz supports subdirectory embedding via owner/repo/tree/branch/subdir format.
-        const normalizedRepo = parseGitHubRepo(repo);
-        // Encode the branch name so slashes (e.g. "claude/fix-foo") become %2F,
-        // preventing StackBlitz from misinterpreting path segments as branch vs subdirectory.
-        const branchSegment = branch ? `/tree/${encodeURIComponent(branch)}` : '';
-        const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
-        const repoPath = `${normalizedRepo}${branchSegment}${rootSegment}`;
-
-        // Get container height for full-height iframe
-        const containerHeight = container?.parentElement?.clientHeight || 600;
-
-        await sdk.embedGithubProject(
-          'preview-container',
-          repoPath,
-          {
-            forceEmbedLayout: true,
-            view: 'preview',
-            height: containerHeight,
-            ...(openFile.trim() ? { openFile: openFile.trim() } : {}),
-            theme: 'light',
-            // Required when the parent page is cross-origin isolated (COOP + COEP headers).
-            // This adds allow="cross-origin-isolated" to the embedded iframe element.
-            // Without this, the StackBlitz VM connection times out in isolated contexts.
-            // See: https://blog.stackblitz.com/posts/cross-browser-with-coop-coep/
-            crossOriginIsolated: true
-          }
-        );
-
-        loaded = true;
-        retrying = false;
-        break;
-      } catch (err) {
-        console.error('StackBlitz error:', err);
-
-        // On the first timeout, silently retry once instead of showing an error.
-        if (isTimeoutError(err) && attempt < MAX_RETRIES) {
-          retrying = true;
-          continue;
-        }
-
-        retrying = false;
-        if (err instanceof Error) {
-          error = `Failed to load preview: ${err.message}`;
-          errorDetail = err.stack ?? '';
-        } else {
-          error = 'Failed to load preview: Unknown error';
-          try {
-            errorDetail = JSON.stringify(err, null, 2);
-          } catch {
-            errorDetail = String(err);
-          }
-        }
-      }
+    const parsed = parseGitHubRepo(repo);
+    if (!parsed) {
+      error = 'Invalid repository format. Use "owner/repo" or a GitHub URL.';
+      return;
     }
 
-    loading = false;
+    const { owner, repo: repoName } = parsed;
+    const ref = branch.trim() || 'HEAD';
+    const root = projectRoot.trim();
+
+    loading = true;
+    loaded = false;
+    error = '';
+    statusMessage = '';
+    stopWatcher();
+    vfs.clear();
+
+    try {
+      // 1. Register Service Worker
+      statusMessage = 'Registering service worker...';
+      await registerPreviewSW();
+
+      // 2. Initialize esbuild-wasm (loads ~7MB wasm binary on first call)
+      statusMessage = 'Initializing transpiler...';
+      await initializeEsbuild();
+
+      // 3. Fetch the latest commit SHA for update polling
+      statusMessage = 'Fetching repository info...';
+      const commitResult = await fetchLatestCommit(owner, repoName, ref);
+      const sha = commitResult?.sha ?? ref;
+      const etag = commitResult?.etag ?? null;
+
+      // 4. Fetch the file tree
+      statusMessage = 'Fetching file tree...';
+      const treeFiles = await fetchRepoTree(owner, repoName, sha);
+
+      // Filter to project root subdirectory if specified
+      const relevantFiles = root
+        ? treeFiles.filter((f) => f.path.startsWith(root + '/'))
+        : treeFiles;
+
+      if (relevantFiles.length === 0) {
+        throw new Error(
+          root
+            ? `No files found under "${root}" in ${owner}/${repoName}`
+            : `No files found in ${owner}/${repoName}`,
+        );
+      }
+
+      // 5. Fetch and transform each file
+      const total = relevantFiles.length;
+      let done = 0;
+
+      await Promise.all(
+        relevantFiles.map(async (file) => {
+          const vfsPath = root ? file.path.slice(root.length + 1) : file.path;
+          const raw = await fetchRawFile(owner, repoName, ref, file.path);
+          const transformed = await transformFile(vfsPath, raw);
+          vfs.set(vfsPath, transformed);
+          done++;
+          statusMessage = `Loading files... (${done}/${total})`;
+        }),
+      );
+
+      // 6. Push VFS to Service Worker
+      statusMessage = 'Syncing to service worker...';
+      syncVFSToSW(vfs.toSnapshot());
+
+      // 7. Point the iframe at /preview/
+      const entryPath = openFile.trim() ? openFile.trim() : 'index.html';
+      if (iframeEl) {
+        iframeEl.src = `/preview/${entryPath}`;
+      }
+
+      loaded = true;
+      statusMessage = '';
+
+      // 8. Start update watcher
+      watcher = new RepoWatcher(owner, repoName, ref, (changedPaths) => {
+        console.log('[preview] Files updated:', changedPaths);
+        reloadIframe();
+      });
+      if (commitResult) {
+        watcher.setBaseCommit(sha, etag);
+      }
+      watcher.start();
+    } catch (err) {
+      console.error('[PreviewView] Load error:', err);
+      if (err instanceof Error) {
+        error = `Failed to load preview: ${err.message}`;
+      } else {
+        error = 'Failed to load preview: Unknown error';
+      }
+      loaded = false;
+    } finally {
+      loading = false;
+    }
   }
 </script>
 
@@ -132,34 +185,41 @@
   <div class="controls">
     <button class="load-button" onclick={handleLoad} disabled={loading || !repo.trim()}>
       {#if loading}
-        ⏳ Loading...
+        Loading...
       {:else if loaded}
         Reload Preview
       {:else}
-        ▶ Load Preview
+        Load Preview
       {/if}
     </button>
+    {#if statusMessage && loading}
+      <p class="status">{statusMessage}</p>
+    {/if}
     {#if error}
       <p class="error">{error}</p>
-      {#if errorDetail}
-        <pre class="error-detail">{errorDetail}</pre>
-      {/if}
     {/if}
   </div>
-  
+
   <div class="preview-container">
     {#if !loaded && !loading}
       <div class="placeholder">
         <p>Enter a GitHub repository and click "Load Preview"</p>
-        <p class="help">Example: facebook/react</p>
+        <p class="help">Example: facebook/react or https://github.com/owner/repo</p>
+        <p class="help">Supports vanilla JS, TypeScript, and JSX projects</p>
       </div>
-    {:else if loading && !loaded}
+    {:else if loading}
       <div class="placeholder">
-        <p>{retrying ? 'Retrying...' : 'Loading StackBlitz preview...'}</p>
-        <p class="help">This may take a moment</p>
+        <p>{statusMessage || 'Loading...'}</p>
       </div>
     {/if}
-    <div id="preview-container" style:display={loaded || loading ? 'block' : 'none'}></div>
+    <!-- svelte-ignore a11y_missing_attribute -->
+    <iframe
+      bind:this={iframeEl}
+      class="preview-iframe"
+      style:display={loaded ? 'block' : 'none'}
+      sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
+      title="Repository Preview"
+    ></iframe>
   </div>
 </div>
 
@@ -170,13 +230,13 @@
     height: 100%;
     background: white;
   }
-  
+
   .controls {
     padding: 0.5rem;
     border-bottom: 1px solid #e5e7eb;
     background: #f9fafb;
   }
-  
+
   .load-button {
     width: 100%;
     padding: 0.5rem;
@@ -189,16 +249,25 @@
     cursor: pointer;
     transition: background 0.2s;
   }
-  
+
   .load-button:hover:not(:disabled) {
     background: #2563eb;
   }
-  
+
   .load-button:disabled {
     background: #9ca3af;
     cursor: not-allowed;
   }
-  
+
+  .status {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #eff6ff;
+    color: #1e40af;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+  }
+
   .error {
     margin-top: 0.5rem;
     padding: 0.5rem;
@@ -208,19 +277,6 @@
     font-size: 0.875rem;
   }
 
-  .error-detail {
-    margin-top: 0.25rem;
-    padding: 0.5rem;
-    background: #fff1f2;
-    color: #7f1d1d;
-    border-radius: 0.375rem;
-    font-size: 0.75rem;
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 10rem;
-    overflow-y: auto;
-  }
-  
   .preview-container {
     flex: 1;
     overflow: hidden;
@@ -228,7 +284,7 @@
     display: flex;
     flex-direction: column;
   }
-  
+
   .placeholder {
     display: flex;
     flex-direction: column;
@@ -239,24 +295,20 @@
     text-align: center;
     padding: 2rem;
   }
-  
+
   .placeholder p {
     margin: 0.5rem 0;
   }
-  
+
   .placeholder .help {
     font-size: 0.875rem;
     opacity: 0.7;
   }
-  
-  #preview-container {
+
+  .preview-iframe {
     width: 100%;
     flex: 1;
+    border: none;
     min-height: 0;
-  }
-  
-  #preview-container :global(iframe) {
-    width: 100% !important;
-    height: 100% !important;
   }
 </style>
