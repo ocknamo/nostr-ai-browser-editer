@@ -17,6 +17,7 @@
   let error = $state('');
   let errorDetail = $state('');
   let loaded = $state(false);
+  let checking = $state(false);
 
   // Current incremental update watcher; not reactive (template does not reference it).
   let watcher: RepoWatcher | null = null;
@@ -147,19 +148,34 @@
     newWatcher.start();
     watcher = newWatcher;
   }
+
+  /** Immediately apply any new commits without waiting for the next poll cycle. */
+  async function handleCheckNow() {
+    if (!watcher) return;
+    checking = true;
+    await watcher.checkNow();
+    checking = false;
+  }
 </script>
 
 <div class="preview-view">
   <div class="controls">
-    <button class="load-button" onclick={handleLoad} disabled={loading || !repo.trim()}>
-      {#if loading}
-        ⏳ Loading...
-      {:else if loaded}
-        Reload Preview
-      {:else}
-        ▶ Load Preview
+    <div class="button-row">
+      <button class="load-button" onclick={handleLoad} disabled={loading || !repo.trim()}>
+        {#if loading}
+          ⏳ Loading...
+        {:else if loaded}
+          Reload Preview
+        {:else}
+          ▶ Load Preview
+        {/if}
+      </button>
+      {#if loaded}
+        <button class="check-button" onclick={handleCheckNow} disabled={checking || loading}>
+          {checking ? 'Checking...' : 'Check Now'}
+        </button>
       {/if}
-    </button>
+    </div>
     {#if error}
       <p class="error">{error}</p>
       {#if errorDetail}
@@ -167,6 +183,7 @@
       {/if}
     {/if}
   </div>
+
   
   <div class="preview-container">
     {#if !loaded && !loading}
@@ -197,8 +214,14 @@
     border-bottom: 1px solid #e5e7eb;
     background: #f9fafb;
   }
-  
+
+  .button-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
   .load-button {
+    flex: 1;
     width: 100%;
     padding: 0.5rem;
     background: #3b82f6;
@@ -217,6 +240,28 @@
   
   .load-button:disabled {
     background: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  .check-button {
+    padding: 0.5rem 0.75rem;
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s;
+  }
+
+  .check-button:hover:not(:disabled) {
+    background: #e5e7eb;
+  }
+
+  .check-button:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
   }
   
