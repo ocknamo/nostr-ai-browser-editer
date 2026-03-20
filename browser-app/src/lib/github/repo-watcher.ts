@@ -176,7 +176,8 @@ export class RepoWatcher {
         }),
       );
 
-      const createMap: Record<string, string> = Object.fromEntries(contentEntries);
+      const createMap: Record<string, string> =
+        Object.fromEntries(contentEntries);
       const destroyList = filteredRemoved.map(stripPrefix);
 
       await this.vm.applyFsDiff({

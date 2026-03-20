@@ -82,9 +82,9 @@ describe('fetchLatestCommit', () => {
     const mockFetch = vi.mocked(fetch);
     mockFetch.mockResolvedValueOnce(new Response(null, { status: 404 }));
 
-    await expect(
-      fetchLatestCommit('owner', 'repo', 'main'),
-    ).rejects.toThrow('404');
+    await expect(fetchLatestCommit('owner', 'repo', 'main')).rejects.toThrow(
+      '404',
+    );
   });
 });
 
@@ -267,8 +267,8 @@ describe('fetchRepoTree', () => {
     const mockFetch = vi.mocked(fetch);
     mockFetch.mockResolvedValueOnce(new Response(null, { status: 404 }));
 
-    await expect(
-      fetchRepoTree('owner', 'repo', 'sha123'),
-    ).rejects.toThrow('404');
+    await expect(fetchRepoTree('owner', 'repo', 'sha123')).rejects.toThrow(
+      '404',
+    );
   });
 });

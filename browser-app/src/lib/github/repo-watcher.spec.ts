@@ -36,9 +36,7 @@ describe('RepoWatcher', () => {
 
     watcher.start();
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('setVm'),
-    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('setVm'));
   });
 
   it('logs a warning and returns when start() is called before setBaseCommit()', () => {
@@ -48,9 +46,7 @@ describe('RepoWatcher', () => {
 
     watcher.start();
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('setBaseCommit'),
-    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('setBaseCommit'));
   });
 
   it('does not call applyFsDiff when fetchLatestCommit returns null (304)', async () => {
