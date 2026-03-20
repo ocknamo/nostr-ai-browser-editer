@@ -21,6 +21,8 @@ channel.addEventListener('message', (event) => {
       vfsFiles.set(path, content);
     }
     console.log('[preview-sw] vfs-init done, files in VFS:', vfsFiles.size);
+    // Notify main thread that VFS is ready to serve requests
+    channel.postMessage({ type: 'vfs-ready', count: vfsFiles.size });
   } else if (type === 'vfs-update') {
     // Incremental update - apply changed and deleted files
     if (updated) {

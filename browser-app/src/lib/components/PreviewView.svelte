@@ -165,7 +165,8 @@
       statusMessage = 'Syncing to service worker...';
       const snapshot = vfs.toSnapshot();
       console.log('[PreviewView] step 6: syncing VFS to SW, entries:', Object.keys(snapshot).length);
-      syncVFSToSW(snapshot);
+      await syncVFSToSW(snapshot);
+      console.log('[PreviewView] step 6: SW acknowledged VFS ready');
 
       // 7. Point the iframe at /preview/
       const entryPath = openFile.trim() ? openFile.trim() : 'index.html';

@@ -41,20 +41,33 @@ export async function registerPreviewSW(): Promise<ServiceWorkerRegistration> {
   }
 
   console.log('[sw-manager] SW active, scope:', registration.scope);
+  console.log('[sw-manager] SW controller:', navigator.serviceWorker.controller?.scriptURL ?? 'none (page not controlled)');
   return registration;
 }
 
 /**
- * Send the full VFS snapshot to the Service Worker.
- * Call this after the initial repository load to populate the SW's file store.
+ * Send the full VFS snapshot to the Service Worker and wait for acknowledgment.
+ * Resolves when the SW has confirmed the VFS is ready to serve requests.
+ * This prevents the race condition where the iframe fetch arrives before vfs-init is processed.
  */
-export function syncVFSToSW(snapshot: Record<string, string>): void {
+export function syncVFSToSW(snapshot: Record<string, string>): Promise<void> {
   if (!channel) {
     console.warn('[sw-manager] BroadcastChannel not open. Call registerPreviewSW() first.');
-    return;
+    return Promise.resolve();
   }
-  console.log('[sw-manager] posting vfs-init with', Object.keys(snapshot).length, 'files');
-  channel.postMessage({ type: 'vfs-init', files: snapshot });
+  const ch = channel;
+  return new Promise((resolve) => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'vfs-ready') {
+        console.log('[sw-manager] SW confirmed vfs-ready, files:', event.data.count);
+        ch.removeEventListener('message', onMessage);
+        resolve();
+      }
+    };
+    ch.addEventListener('message', onMessage);
+    console.log('[sw-manager] posting vfs-init with', Object.keys(snapshot).length, 'files');
+    ch.postMessage({ type: 'vfs-init', files: snapshot });
+  });
 }
 
 /**
