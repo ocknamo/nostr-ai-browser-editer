@@ -1,6 +1,7 @@
 <script lang="ts">
   import sdk from '@stackblitz/sdk';
-  import { isTimeoutError } from '../stackblitz-utils';
+  import { isTimeoutError, buildStackblitzPath } from '../stackblitz-utils';
+  import { parseGitHubRepo } from '../github-utils';
 
   let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
     repo?: string;
@@ -25,29 +26,6 @@
     }
   });
   
-  // Parse GitHub URL to owner/repo format
-  function parseGitHubRepo(input: string): string {
-    // If it's already in owner/repo format, return as-is
-    if (/^[^/]+\/[^/]+$/.test(input.trim())) {
-      return input.trim();
-    }
-    
-    // Try to parse GitHub URL
-    try {
-      const url = new URL(input);
-      if (url.hostname === 'github.com') {
-        const parts = url.pathname.split('/').filter(p => p);
-        if (parts.length >= 2) {
-          return `${parts[0]}/${parts[1]}`;
-        }
-      }
-    } catch {
-      // Not a valid URL, return as-is
-    }
-    
-    return input.trim();
-  }
-  
   async function handleLoad() {
     if (!repo.trim()) {
       error = 'Please enter a repository';
@@ -68,14 +46,9 @@
           container.innerHTML = '';
         }
 
-        // Normalize repo format and build path with optional branch and project root.
-        // StackBlitz supports subdirectory embedding via owner/repo/tree/branch/subdir format.
+        // Normalize repo format and build the StackBlitz project path.
         const normalizedRepo = parseGitHubRepo(repo);
-        // Encode the branch name so slashes (e.g. "claude/fix-foo") become %2F,
-        // preventing StackBlitz from misinterpreting path segments as branch vs subdirectory.
-        const branchSegment = branch ? `/tree/${encodeURIComponent(branch)}` : '';
-        const rootSegment = projectRoot.trim() ? `/${projectRoot.trim()}` : '';
-        const repoPath = `${normalizedRepo}${branchSegment}${rootSegment}`;
+        const repoPath = buildStackblitzPath(normalizedRepo, branch, projectRoot);
 
         // Get container height for full-height iframe
         const containerHeight = container?.parentElement?.clientHeight || 600;
