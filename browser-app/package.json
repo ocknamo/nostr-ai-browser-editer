@@ -8,9 +8,13 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "biome lint src/",
+    "format": "biome format src/",
+    "format:write": "biome format --write src/"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tsconfig/svelte": "^5.0.6",
     "@types/node": "^24.10.1",

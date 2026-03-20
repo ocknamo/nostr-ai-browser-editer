@@ -5,6 +5,7 @@
     deleteProjectProfile,
     type ProjectProfile,
   } from '../settings-store';
+  import { parseGitHubRepo } from '../github-utils';
 
   let {
     repo = $bindable(''),
@@ -24,21 +25,6 @@
   let selectedProfileId = $state('');
   let profiles = $state<ProjectProfile[]>(loadProjectProfiles());
   let dialogEl = $state<HTMLDialogElement | null>(null);
-
-  /** Parse GitHub URL to owner/repo format. */
-  function parseGitHubRepo(input: string): string {
-    if (!input) return '';
-    const trimmed = input.trim();
-    if (/^[^/]+\/[^/]+$/.test(trimmed)) return trimmed;
-    try {
-      const url = new URL(trimmed);
-      if (url.hostname === 'github.com') {
-        const parts = url.pathname.split('/').filter(p => p);
-        if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
-      }
-    } catch { /* ignore */ }
-    return trimmed;
-  }
 
   let normalizedRepo = $derived(parseGitHubRepo(repo));
   let shortRepo = $derived(normalizedRepo ? (normalizedRepo.length > 18 ? normalizedRepo.slice(0, 18) + '…' : normalizedRepo) : '');
@@ -356,10 +342,12 @@
     gap: 0.4rem;
     align-items: center;
     margin-top: 0.4rem;
+    min-width: 0;
   }
 
   .profile-select {
     flex: 1;
+    min-width: 0;
     padding: 0.35rem 0.5rem;
     border: none;
     border-radius: 0.25rem;
@@ -369,6 +357,7 @@
   }
 
   .action-btn {
+    flex-shrink: 0;
     background: rgba(255,255,255,0.15);
     border: 1px solid rgba(255,255,255,0.3);
     color: white;

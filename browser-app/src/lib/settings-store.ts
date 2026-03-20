@@ -60,12 +60,15 @@ export function loadProjectProfiles(): ProjectProfile[] {
 }
 
 /** Save a new project profile. Existing profiles are preserved. */
-export function saveProjectProfile(profile: Omit<ProjectProfile, 'id' | 'createdAt'>): void {
+export function saveProjectProfile(
+  profile: Omit<ProjectProfile, 'id' | 'createdAt'>,
+): void {
   const profiles = loadProjectProfiles();
+  const now = Date.now();
   const newProfile: ProjectProfile = {
     ...profile,
-    id: String(Date.now()),
-    createdAt: Date.now(),
+    id: crypto.randomUUID(),
+    createdAt: now,
   };
   profiles.push(newProfile);
   try {
