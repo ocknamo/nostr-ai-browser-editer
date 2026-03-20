@@ -1,16 +1,22 @@
-import { describe, it, expect } from 'vitest';
-import { isTimeoutError, buildStackblitzPath } from './stackblitz-utils';
+import { describe, expect, it } from 'vitest';
+import { buildStackblitzPath, isTimeoutError } from './stackblitz-utils';
 
 describe('isTimeoutError', () => {
   it('returns true for the exact StackBlitz VM timeout string', () => {
     expect(
-      isTimeoutError('Timeout: Unable to establish a connection with the StackBlitz VM')
+      isTimeoutError(
+        'Timeout: Unable to establish a connection with the StackBlitz VM',
+      ),
     ).toBe(true);
   });
 
   it('returns true for an Error instance with timeout message', () => {
     expect(
-      isTimeoutError(new Error('Timeout: Unable to establish a connection with the StackBlitz VM'))
+      isTimeoutError(
+        new Error(
+          'Timeout: Unable to establish a connection with the StackBlitz VM',
+        ),
+      ),
     ).toBe(true);
   });
 
@@ -41,30 +47,44 @@ describe('isTimeoutError', () => {
 
 describe('buildStackblitzPath', () => {
   it('returns only the repo when branch and projectRoot are empty', () => {
-    expect(buildStackblitzPath('facebook/react', '', '')).toBe('facebook/react');
+    expect(buildStackblitzPath('facebook/react', '', '')).toBe(
+      'facebook/react',
+    );
   });
 
   it('appends branch segment when branch is provided', () => {
-    expect(buildStackblitzPath('facebook/react', 'main', '')).toBe('facebook/react/tree/main');
+    expect(buildStackblitzPath('facebook/react', 'main', '')).toBe(
+      'facebook/react/tree/main',
+    );
   });
 
   it('URL-encodes slashes in branch names', () => {
-    expect(buildStackblitzPath('owner/repo', 'claude/fix-foo', '')).toBe('owner/repo/tree/claude%2Ffix-foo');
+    expect(buildStackblitzPath('owner/repo', 'claude/fix-foo', '')).toBe(
+      'owner/repo/tree/claude%2Ffix-foo',
+    );
   });
 
   it('appends projectRoot after branch segment', () => {
-    expect(buildStackblitzPath('owner/repo', 'main', 'packages/app')).toBe('owner/repo/tree/main/packages/app');
+    expect(buildStackblitzPath('owner/repo', 'main', 'packages/app')).toBe(
+      'owner/repo/tree/main/packages/app',
+    );
   });
 
   it('appends projectRoot even when branch is empty', () => {
-    expect(buildStackblitzPath('owner/repo', '', 'subdir')).toBe('owner/repo/subdir');
+    expect(buildStackblitzPath('owner/repo', '', 'subdir')).toBe(
+      'owner/repo/subdir',
+    );
   });
 
   it('ignores projectRoot that is only whitespace', () => {
-    expect(buildStackblitzPath('owner/repo', 'main', '   ')).toBe('owner/repo/tree/main');
+    expect(buildStackblitzPath('owner/repo', 'main', '   ')).toBe(
+      'owner/repo/tree/main',
+    );
   });
 
   it('trims whitespace from projectRoot', () => {
-    expect(buildStackblitzPath('owner/repo', 'main', '  app  ')).toBe('owner/repo/tree/main/app');
+    expect(buildStackblitzPath('owner/repo', 'main', '  app  ')).toBe(
+      'owner/repo/tree/main/app',
+    );
   });
 });
