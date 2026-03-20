@@ -1,8 +1,8 @@
 <script lang="ts">
   import { fetchRepoTree, fetchRawFile, fetchLatestCommit } from '../github/github-api';
-  import { initializeEsbuild, bundleFromVFS } from '../preview/esbuild-transformer';
-  import { findEntryPoint, buildPreviewDocument } from '../preview/preview-builder';
+  import { transformFile, initializeEsbuild } from '../preview/esbuild-transformer';
   import { vfs } from '../vfs/virtual-fs';
+  import { registerPreviewSW, syncVFSToSW } from '../preview/sw-manager';
   import { RepoWatcher } from '../github/repo-watcher';
 
   let { repo = $bindable(''), branch = $bindable(''), openFile = $bindable(''), projectRoot = $bindable('') }: {
@@ -19,8 +19,6 @@
   let iframeEl = $state<HTMLIFrameElement | null>(null);
 
   let watcher: RepoWatcher | null = null;
-  let currentEntryFile = '';
-  let currentOpenFile = '';
 
   // Reset loaded state when repo or branch changes
   $effect(() => {
@@ -37,15 +35,17 @@
     return () => stopWatcher();
   });
 
-  /** Parse a GitHub URL or owner/repo string into { owner, repo } format. */
+  /** Parse a GitHub URL or owner/repo string into owner/repo format. */
   function parseGitHubRepo(input: string): { owner: string; repo: string } | null {
     const trimmed = input.trim();
 
+    // owner/repo format
     if (/^[^/]+\/[^/]+$/.test(trimmed)) {
       const [owner, repoName] = trimmed.split('/');
       return { owner, repo: repoName };
     }
 
+    // https://github.com/owner/repo URL
     try {
       const url = new URL(trimmed);
       if (url.hostname === 'github.com') {
@@ -68,12 +68,10 @@
     }
   }
 
-  /** Rebundle the project and refresh the iframe srcdoc. */
-  async function rebundle(): Promise<void> {
-    const bundle = await bundleFromVFS(vfs, currentEntryFile);
-    const html = buildPreviewDocument(vfs, bundle);
+  /** Reload the preview iframe after a VFS update. */
+  function reloadIframe(): void {
     if (iframeEl) {
-      iframeEl.srcdoc = html;
+      iframeEl.contentWindow?.location.reload();
     }
   }
 
@@ -97,25 +95,30 @@
     loaded = false;
     error = '';
     statusMessage = '';
-    currentOpenFile = openFile.trim();
     stopWatcher();
     vfs.clear();
 
     try {
-      // 1. Initialize esbuild-wasm (loads ~7MB wasm binary on first call)
+      // 1. Register Service Worker
+      statusMessage = 'Registering service worker...';
+      await registerPreviewSW();
+
+      // 2. Initialize esbuild-wasm (loads ~7MB wasm binary on first call)
       statusMessage = 'Initializing transpiler...';
       await initializeEsbuild();
 
-      // 2. Fetch the latest commit SHA (used for update polling baseline)
+      // 3. Fetch the latest commit SHA for update polling
       statusMessage = 'Fetching repository info...';
       const commitResult = await fetchLatestCommit(owner, repoName, ref);
       const sha = commitResult?.sha ?? ref;
       const etag = commitResult?.etag ?? null;
 
-      // 3. Fetch the file tree using the branch ref
+      // 4. Fetch the file tree using the branch ref (not commit SHA).
+      // The Git Trees API accepts a branch name or tag as the ref parameter.
       statusMessage = 'Fetching file tree...';
       const treeFiles = await fetchRepoTree(owner, repoName, ref);
 
+      // Filter to project root subdirectory if specified
       const relevantFiles = root
         ? treeFiles.filter((f) => f.path.startsWith(root + '/'))
         : treeFiles;
@@ -128,7 +131,7 @@
         );
       }
 
-      // 4. Fetch all files and store in VFS
+      // 5. Fetch and transform each file
       const total = relevantFiles.length;
       let done = 0;
 
@@ -136,31 +139,30 @@
         relevantFiles.map(async (file) => {
           const vfsPath = root ? file.path.slice(root.length + 1) : file.path;
           const raw = await fetchRawFile(owner, repoName, ref, file.path);
-          vfs.set(vfsPath, raw);
+          const transformed = await transformFile(vfsPath, raw);
+          vfs.set(vfsPath, transformed);
           done++;
           statusMessage = `Loading files... (${done}/${total})`;
         }),
       );
 
-      // 5. Find the entry point and bundle the project
-      statusMessage = 'Bundling project...';
-      currentEntryFile = findEntryPoint(vfs, currentOpenFile);
-      const bundle = await bundleFromVFS(vfs, currentEntryFile);
+      // 6. Push VFS to Service Worker
+      statusMessage = 'Syncing to service worker...';
+      syncVFSToSW(vfs.toSnapshot());
 
-      // 6. Build the preview document and inject into iframe
-      statusMessage = 'Rendering preview...';
-      const html = buildPreviewDocument(vfs, bundle);
+      // 7. Point the iframe at /preview/
+      const entryPath = openFile.trim() ? openFile.trim() : 'index.html';
       if (iframeEl) {
-        iframeEl.srcdoc = html;
+        iframeEl.src = `/preview/${entryPath}`;
       }
 
       loaded = true;
       statusMessage = '';
 
-      // 7. Start update watcher - rebundle when files change
-      watcher = new RepoWatcher(owner, repoName, ref, async (changedPaths) => {
+      // 8. Start update watcher
+      watcher = new RepoWatcher(owner, repoName, ref, (changedPaths) => {
         console.log('[preview] Files updated:', changedPaths);
-        await rebundle();
+        reloadIframe();
       });
       if (commitResult) {
         watcher.setBaseCommit(sha, etag);
@@ -171,6 +173,7 @@
       if (err instanceof Error) {
         error = `Failed to load preview: ${err.message}`;
       } else if (err && typeof err === 'object' && 'errors' in err) {
+        // esbuild TransformFailure / BuildFailure shape: { errors: [{ text }] }
         const messages = (err as { errors: Array<{ text: string }> }).errors
           .map((e) => e.text)
           .join('; ');

@@ -2,17 +2,17 @@
  * Polls a GitHub branch for new commits and reports changed files.
  * Uses ETag-based conditional requests to avoid redundant API calls and stay
  * within the 60 requests/hour unauthenticated rate limit.
- * On change, updates the VFS with raw file content and invokes the callback.
- * Bundling / re-rendering is the responsibility of the caller's callback.
  */
 import { fetchLatestCommit, fetchChangedFiles, fetchRawFile } from './github-api';
+import { transformFile } from '../preview/esbuild-transformer';
 import { vfs } from '../vfs/virtual-fs';
+import { updateSWFiles } from '../preview/sw-manager';
 
 /** Interval between commit checks in milliseconds. */
 const POLL_INTERVAL_MS = 60_000;
 
-/** Callback invoked after the VFS has been updated with changed files. */
-export type OnUpdateCallback = (changedPaths: string[]) => void | Promise<void>;
+/** Callback invoked after the VFS and SW have been updated with changed files. */
+export type OnUpdateCallback = (changedPaths: string[]) => void;
 
 export class RepoWatcher {
   private owner: string;
@@ -64,7 +64,7 @@ export class RepoWatcher {
     this.currentEtag = null;
   }
 
-  /** Update the watched repository coordinates. */
+  /** Update the watched repository coordinates. Triggers a new poll cycle. */
   updateRef(owner: string, repo: string, branch: string): void {
     this.owner = owner;
     this.repo = repo;
@@ -76,13 +76,11 @@ export class RepoWatcher {
   private scheduleNext(): void {
     if (!this.active) return;
     this.timerId = setTimeout(() => {
-      this.poll()
-        .catch((err) => {
-          console.warn('[repo-watcher] Poll error:', err);
-        })
-        .finally(() => {
-          this.scheduleNext();
-        });
+      this.poll().catch((err) => {
+        console.warn('[repo-watcher] Poll error:', err);
+      }).finally(() => {
+        this.scheduleNext();
+      });
     }, POLL_INTERVAL_MS);
   }
 
@@ -103,6 +101,7 @@ export class RepoWatcher {
     this.currentEtag = result.etag;
 
     if (!this.currentSha || newSha === this.currentSha) {
+      // First poll or no change in SHA
       this.currentSha = newSha;
       return;
     }
@@ -110,6 +109,7 @@ export class RepoWatcher {
     const baseSha = this.currentSha;
     this.currentSha = newSha;
 
+    // Fetch diff and apply changes
     const { changedFiles, removedFiles } = await fetchChangedFiles(
       this.owner,
       this.repo,
@@ -119,23 +119,29 @@ export class RepoWatcher {
 
     if (changedFiles.length === 0 && removedFiles.length === 0) return;
 
-    // Fetch changed files and update VFS with raw content.
-    // Bundling is triggered by the caller via the onUpdate callback.
+    // Fetch and transform changed files
+    const updatedEntries: Record<string, string> = {};
     await Promise.all(
       changedFiles.map(async (path) => {
         try {
           const raw = await fetchRawFile(this.owner, this.repo, this.branch, path);
-          vfs.set(path, raw);
+          const transformed = await transformFile(path, raw);
+          vfs.set(path, transformed);
+          updatedEntries[path] = transformed;
         } catch (err) {
           console.warn(`[repo-watcher] Failed to update file ${path}:`, err);
         }
       }),
     );
 
+    // Remove deleted files from VFS
     for (const path of removedFiles) {
       vfs.delete(path);
     }
 
-    await this.onUpdate([...changedFiles, ...removedFiles]);
+    // Push changes to Service Worker
+    updateSWFiles(updatedEntries, removedFiles);
+
+    this.onUpdate([...changedFiles, ...removedFiles]);
   }
 }
