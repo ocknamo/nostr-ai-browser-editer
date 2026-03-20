@@ -12,6 +12,7 @@ const channel = new BroadcastChannel('preview-vfs');
 
 channel.addEventListener('message', (event) => {
   const { type, files, updated, deleted } = event.data;
+  console.log('[preview-sw] message received, type:', type);
 
   if (type === 'vfs-init') {
     // Full filesystem sync - replace all existing files
@@ -19,6 +20,7 @@ channel.addEventListener('message', (event) => {
     for (const [path, content] of Object.entries(files)) {
       vfsFiles.set(path, content);
     }
+    console.log('[preview-sw] vfs-init done, files in VFS:', vfsFiles.size);
   } else if (type === 'vfs-update') {
     // Incremental update - apply changed and deleted files
     if (updated) {
@@ -48,7 +50,16 @@ self.addEventListener('fetch', (event) => {
   // Only intercept requests to /preview/
   if (!url.pathname.startsWith('/preview/')) return;
 
-  event.respondWith(handlePreviewRequest(url.pathname));
+  console.log('[preview-sw] fetch intercepted:', url.pathname, 'vfs size:', vfsFiles.size);
+  event.respondWith(
+    handlePreviewRequest(url.pathname).catch((err) => {
+      console.error('[preview-sw] handlePreviewRequest error:', err);
+      return new Response(`SW error: ${err.message}`, {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain' },
+      });
+    }),
+  );
 });
 
 /**
@@ -71,11 +82,14 @@ async function handlePreviewRequest(pathname) {
   }
 
   if (content === undefined) {
+    console.warn('[preview-sw] 404 not found:', vfsPath, '| vfs keys:', [...vfsFiles.keys()].slice(0, 10));
     return new Response(`Not found: ${vfsPath}`, {
       status: 404,
       headers: { 'Content-Type': 'text/plain' },
     });
   }
+
+  console.log('[preview-sw] serving:', vfsPath, 'size:', content.length);
 
   const mimeType = getMimeType(vfsPath);
 
