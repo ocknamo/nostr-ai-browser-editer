@@ -113,9 +113,10 @@
       const sha = commitResult?.sha ?? ref;
       const etag = commitResult?.etag ?? null;
 
-      // 4. Fetch the file tree
+      // 4. Fetch the file tree using the branch ref (not commit SHA).
+      // The Git Trees API accepts a branch name or tag as the ref parameter.
       statusMessage = 'Fetching file tree...';
-      const treeFiles = await fetchRepoTree(owner, repoName, sha);
+      const treeFiles = await fetchRepoTree(owner, repoName, ref);
 
       // Filter to project root subdirectory if specified
       const relevantFiles = root
@@ -171,8 +172,18 @@
       console.error('[PreviewView] Load error:', err);
       if (err instanceof Error) {
         error = `Failed to load preview: ${err.message}`;
+      } else if (err && typeof err === 'object' && 'errors' in err) {
+        // esbuild TransformFailure / BuildFailure shape: { errors: [{ text }] }
+        const messages = (err as { errors: Array<{ text: string }> }).errors
+          .map((e) => e.text)
+          .join('; ');
+        error = `Failed to load preview: ${messages || JSON.stringify(err)}`;
       } else {
-        error = 'Failed to load preview: Unknown error';
+        try {
+          error = `Failed to load preview: ${JSON.stringify(err)}`;
+        } catch {
+          error = `Failed to load preview: ${String(err)}`;
+        }
       }
       loaded = false;
     } finally {
