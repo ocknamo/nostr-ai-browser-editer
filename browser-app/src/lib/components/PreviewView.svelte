@@ -128,25 +128,25 @@
    *
    * Fetches the current HEAD commit to seed the base SHA so the first poll
    * does not perform a redundant compare against an unknown state.
+   * If the initial commit fetch fails, the watcher is not started and watcher
+   * remains null, preventing silent no-op syncs.
    */
   async function startWatcher(normalizedRepo: string, vm: Awaited<ReturnType<typeof sdk.embedGithubProject>>) {
     const [owner, repoName] = normalizedRepo.split('/');
     if (!owner || !repoName) return;
 
-    const newWatcher = new RepoWatcher(owner, repoName, branch, projectRoot);
-    newWatcher.setVm(vm);
-
     try {
       const commit = await fetchLatestCommit(owner, repoName, branch);
-      if (commit) {
-        newWatcher.setBaseCommit(commit.sha, commit.etag);
-      }
+      if (!commit) return;
+
+      const newWatcher = new RepoWatcher(owner, repoName, branch, projectRoot);
+      newWatcher.setVm(vm);
+      newWatcher.setBaseCommit(commit.sha, commit.etag);
+      newWatcher.start();
+      watcher = newWatcher;
     } catch (err) {
       console.warn('[PreviewView] Could not fetch initial commit for watcher:', err);
     }
-
-    newWatcher.start();
-    watcher = newWatcher;
   }
 
   /** Immediately apply any new commits without waiting for the next poll cycle. */
