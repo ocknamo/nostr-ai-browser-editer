@@ -19,7 +19,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          check-latest: true
           cache: npm
           cache-dependency-path: browser-app/package-lock.json
 
@@ -40,7 +41,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          check-latest: true
           cache: npm
           cache-dependency-path: browser-app/package-lock.json
 
@@ -58,7 +60,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          check-latest: true
           cache: npm
           cache-dependency-path: browser-app/package-lock.json
 
@@ -76,7 +79,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          check-latest: true
           cache: npm
           cache-dependency-path: browser-app/package-lock.json
 
@@ -94,7 +98,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          check-latest: true
           cache: npm
           cache-dependency-path: browser-app/package-lock.json
 
